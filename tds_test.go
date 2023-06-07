@@ -126,12 +126,13 @@ func TestSendLoginWithFeatureExt(t *testing.T) {
 		FedAuthLibrary: FedAuthLibrarySecurityToken,
 		FedAuthToken:   "fedauthtoken",
 	})
+	login.FeatureExt.Add(&featureExtColumnEncryption{})
 	err := sendLogin(buf, &login)
 	if err != nil {
 		t.Error("sendLogin should succeed")
 	}
 	ref := []byte{
-		16, 1, 0, 223, 0, 0, 1, 0, 215, 0, 0, 0, 4, 0, 0, 116,
+		16, 1, 0, 0xe5, 0, 0, 1, 0, 0xdd, 0, 0, 0, 4, 0, 0, 116,
 		0, 16, 0, 0, 0, 1, 6, 1, 100, 0, 0, 0, 0, 0, 0, 0,
 		224, 0, 0, 24, 16, 255, 255, 255, 4, 2, 0, 0, 94, 0, 7, 0,
 		108, 0, 0, 0, 108, 0, 0, 0, 108, 0, 7, 0, 122, 0, 10, 0,
@@ -144,7 +145,8 @@ func TestSendLoginWithFeatureExt(t *testing.T) {
 		114, 0, 121, 0, 101, 0, 110, 0, 100, 0, 97, 0, 116, 0, 97, 0,
 		98, 0, 97, 0, 115, 0, 101, 0, 180, 0, 0, 0, 2, 29, 0, 0,
 		0, 2, 24, 0, 0, 0, 102, 0, 101, 0, 100, 0, 97, 0, 117, 0,
-		116, 0, 104, 0, 116, 0, 111, 0, 107, 0, 101, 0, 110, 0, 255}
+		116, 0, 104, 0, 116, 0, 111, 0, 107, 0, 101, 0, 110, 0, 4, 1,
+		0, 0, 0, 2, 255}
 	out := memBuf.Bytes()
 	if !bytes.Equal(ref, out) {
 		t.Log("Expected:")

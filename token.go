@@ -95,7 +95,8 @@ const (
 // COLMETADATA flags
 // https://msdn.microsoft.com/en-us/library/dd357363.aspx
 const (
-	colFlagNullable = 1
+	colFlagNullable  = 1
+	colFlagEncrypted = 0x0800
 	// TODO implement more flags
 )
 

@@ -157,16 +157,17 @@ const (
 )
 
 type tdsSession struct {
-	buf          *tdsBuffer
-	loginAck     loginAckStruct
-	database     string
-	partner      string
-	columns      []columnStruct
-	tranid       uint64
-	logFlags     uint64
-	logger       ContextLogger
-	routedServer string
-	routedPort   uint16
+	buf             *tdsBuffer
+	loginAck        loginAckStruct
+	database        string
+	partner         string
+	columns         []columnStruct
+	tranid          uint64
+	logFlags        uint64
+	logger          ContextLogger
+	routedServer    string
+	routedPort      uint16
+	alwaysEncrypted bool
 }
 
 const (
@@ -1047,6 +1048,9 @@ func prepareLogin(ctx context.Context, c *Connector, p msdsn.Config, logger Cont
 		CtlIntName:    "go-mssqldb",
 		ClientProgVer: getDriverVersion(driverVersion),
 	}
+	if p.ColumnEncryption {
+		_ = l.FeatureExt.Add(&featureExtColumnEncryption{})
+	}
 	switch {
 	case fe.FedAuthLibrary == FedAuthLibrarySecurityToken:
 		if uint64(p.LogFlags)&logDebug != 0 {
@@ -1061,14 +1065,14 @@ func prepareLogin(ctx context.Context, c *Connector, p msdsn.Config, logger Cont
 			return nil, err
 		}
 
-		l.FeatureExt.Add(fe)
+		_ = l.FeatureExt.Add(fe)
 
 	case fe.FedAuthLibrary == FedAuthLibraryADAL:
 		if uint64(p.LogFlags)&logDebug != 0 {
 			logger.Log(ctx, msdsn.LogDebug, "Starting federated authentication using ADAL")
 		}
 
-		l.FeatureExt.Add(fe)
+		_ = l.FeatureExt.Add(fe)
 
 	case auth != nil:
 		if uint64(p.LogFlags)&logDebug != 0 {
@@ -1316,4 +1320,22 @@ initiate_connection:
 		goto initiate_connection
 	}
 	return &sess, nil
+}
+
+type featureExtColumnEncryption struct {
+}
+
+func (f *featureExtColumnEncryption) featureID() byte {
+	return featExtCOLUMNENCRYPTION
+}
+
+func (f *featureExtColumnEncryption) toBytes() []byte {
+	/*
+		1 = The client supports column encryption without enclave computations.
+		2 = The client SHOULD<25> support column encryption when encrypted data require enclave computations.
+		3 = The client SHOULD<26> support column encryption when encrypted data require enclave computations
+		with the additional ability to cache column encryption keys that are to be sent to the enclave
+		and the ability to retry queries when the keys sent by the client do not match what is needed for the query to run.
+	*/
+	return []byte{0x02}
 }
