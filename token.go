@@ -1,6 +1,7 @@
 package mssql
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/golang-sql/sqlexp"
 	"github.com/microsoft/go-mssqldb/msdsn"
+	"golang.org/x/text/encoding/unicode"
 )
 
 //go:generate go run golang.org/x/tools/cmd/stringer -type token
@@ -90,6 +92,10 @@ const (
 const (
 	fedAuthInfoSTSURL = 0x01
 	fedAuthInfoSPN    = 0x02
+)
+
+const (
+	cipherAlgCustom = 0x00
 )
 
 // COLMETADATA flags
@@ -534,7 +540,14 @@ type fedAuthAckStruct struct {
 	Signature []byte
 }
 
-func parseFeatureExtAck(r *tdsBuffer) map[byte]interface{} {
+type colAckStruct struct {
+	Version     int
+	EnclaveType string
+}
+
+type featureExtAck map[byte]interface{}
+
+func parseFeatureExtAck(r *tdsBuffer) featureExtAck {
 	ack := map[byte]interface{}{}
 
 	for feature := r.byte(); feature != featExtTERMINATOR; feature = r.byte() {
@@ -556,7 +569,21 @@ func parseFeatureExtAck(r *tdsBuffer) map[byte]interface{} {
 				length -= 32
 			}
 			ack[feature] = fedAuthAck
+		case featExtCOLUMNENCRYPTION:
+			colAck := colAckStruct{Version: int(r.byte())}
+			length--
+			if length > 0 {
+				// enclave type is sent as utf16 le
+				enclaveLength := r.byte() * 2
+				length--
+				enclaveBytes := make([]byte, enclaveLength)
+				r.ReadFull(enclaveBytes)
+				// if the enclave type is malformed we'll just ignore it
+				colAck.EnclaveType, _ = ucs22str(enclaveBytes)
+				length -= uint32(enclaveLength)
 
+			}
+			ack[feature] = colAck
 		}
 
 		// Skip unprocessed bytes
@@ -569,34 +596,244 @@ func parseFeatureExtAck(r *tdsBuffer) map[byte]interface{} {
 }
 
 // http://msdn.microsoft.com/en-us/library/dd357363.aspx
-func parseColMetadata72(r *tdsBuffer) (columns []columnStruct) {
+func parseColMetadata72(r *tdsBuffer, s *tdsSession) (columns []columnStruct) {
 	count := r.uint16()
 	if count == 0xffff {
 		// no metadata is sent
 		return nil
 	}
 	columns = make([]columnStruct, count)
+	var cekTable *cekTable
+	if s.alwaysEncrypted {
+		// column encryption key list
+		cekTable = readCekTable(r)
+	}
+
 	for i := range columns {
 		column := &columns[i]
-		column.UserType = r.uint32()
-		column.Flags = r.uint16()
+		baseTi := getBaseTypeInfo(r, true)
+		typeInfo := readTypeInfo(r, baseTi.TypeId, column.cryptoMeta)
+		typeInfo.UserType = baseTi.UserType
+		typeInfo.Flags = baseTi.Flags
+		typeInfo.TypeId = baseTi.TypeId
 
-		// parsing TYPE_INFO structure
-		column.ti = readTypeInfo(r)
+		column.Flags = baseTi.Flags
+		column.UserType = baseTi.UserType
+		column.ti = typeInfo
+
+		if column.isEncrypted() && s.alwaysEncrypted {
+			// Read Crypto Metadata
+			cryptoMeta := parseCryptoMetadata(r, cekTable)
+			cryptoMeta.typeInfo.Flags = baseTi.Flags
+			column.cryptoMeta = &cryptoMeta
+		} else {
+			column.cryptoMeta = nil
+		}
+
 		column.ColName = r.BVarChar()
 	}
 	return columns
 }
 
-// http://msdn.microsoft.com/en-us/library/dd357254.aspx
-func parseRow(r *tdsBuffer, columns []columnStruct, row []interface{}) {
-	for i, column := range columns {
-		row[i] = column.ti.Reader(&column.ti, r)
+func getBaseTypeInfo(r *tdsBuffer, parseFlags bool) typeInfo {
+	userType := r.uint32()
+	flags := uint16(0)
+	if parseFlags {
+		flags = r.uint16()
+	}
+	tId := r.byte()
+
+	return typeInfo{
+		UserType: userType,
+		Flags:    flags,
+		TypeId:   tId}
+}
+
+type cryptoMetadata struct {
+	entry         *cekTableEntry
+	ordinal       uint16
+	algorithmId   byte
+	algorithmName *string
+	encType       byte
+	normRuleVer   byte
+	typeInfo      typeInfo
+}
+
+func parseCryptoMetadata(r *tdsBuffer, cekTable *cekTable) cryptoMetadata {
+	ordinal := uint16(0)
+	if cekTable != nil {
+		ordinal = r.uint16()
+	}
+
+	typeInfo := getBaseTypeInfo(r, false)
+	ti := readTypeInfo(r, typeInfo.TypeId, nil)
+	ti.UserType = typeInfo.UserType
+	ti.Flags = typeInfo.Flags
+	ti.TypeId = typeInfo.TypeId
+
+	algorithmId := r.byte()
+	var algName *string = nil
+
+	if algorithmId == cipherAlgCustom {
+		// Read the name when a custom algorithm is used
+		nameLen := int(r.byte())
+		var algNameUtf16 = make([]byte, nameLen*2)
+		r.ReadFull(algNameUtf16)
+		algNameBytes, _ := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM).NewDecoder().Bytes(algNameUtf16)
+		mAlgName := string(algNameBytes)
+		algName = &mAlgName
+	}
+
+	encType := r.byte()
+	normRuleVer := r.byte()
+
+	var entry *cekTableEntry = nil
+
+	if cekTable != nil {
+		if int(ordinal) > len(cekTable.entries)-1 {
+			panic(fmt.Errorf("invalid ordinal, cekTable only has %d entries", len(cekTable.entries)))
+		}
+		entry = &cekTable.entries[ordinal]
+	}
+
+	return cryptoMetadata{
+		entry:         entry,
+		ordinal:       ordinal,
+		algorithmId:   algorithmId,
+		algorithmName: algName,
+		encType:       encType,
+		normRuleVer:   normRuleVer,
+		typeInfo:      ti,
 	}
 }
 
+func readCekTable(r *tdsBuffer) *cekTable {
+	tableSize := r.uint16()
+	var cekTable *cekTable = nil
+
+	if tableSize != 0 {
+		mCekTable := newCekTable(tableSize)
+		for i := uint16(0); i < tableSize; i++ {
+			mCekTable.entries[i] = readCekTableEntry(r)
+		}
+		cekTable = &mCekTable
+	}
+
+	return cekTable
+}
+
+func readCekTableEntry(r *tdsBuffer) cekTableEntry {
+	databaseId := r.int32()
+	cekID := r.int32()
+	cekVersion := r.int32()
+	var cekMdVersion = make([]byte, 8)
+	_, err := r.Read(cekMdVersion)
+	if err != nil {
+		panic("unable to read cekMdVersion")
+	}
+
+	cekValueCount := uint(r.byte())
+	// not using ucs22str because we already know the data is utf16
+	enc := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM)
+	utf16dec := enc.NewDecoder()
+	cekValues := make([]encryptionKeyInfo, cekValueCount)
+
+	for i := uint(0); i < cekValueCount; i++ {
+		encryptedCekLength := r.uint16()
+		encryptedCek := make([]byte, encryptedCekLength)
+		r.ReadFull(encryptedCek)
+
+		keyStoreLength := r.byte()
+		keyStoreNameUtf16 := make([]byte, keyStoreLength*2)
+		r.ReadFull(keyStoreNameUtf16)
+		keyStoreName, _ := utf16dec.Bytes(keyStoreNameUtf16)
+
+		keyPathLength := r.uint16()
+		keyPathUtf16 := make([]byte, keyPathLength*2)
+		r.ReadFull(keyPathUtf16)
+		keyPath, _ := utf16dec.Bytes(keyPathUtf16)
+
+		algLength := r.byte()
+		algNameUtf16 := make([]byte, algLength*2)
+		r.ReadFull(algNameUtf16)
+		algName, _ := utf16dec.Bytes(algNameUtf16)
+
+		cekValues[i] = encryptionKeyInfo{
+			encryptedKey:  encryptedCek,
+			databaseID:    int(databaseId),
+			cekID:         int(cekID),
+			cekVersion:    int(cekVersion),
+			cekMdVersion:  cekMdVersion,
+			keyPath:       string(keyPath),
+			keyStoreName:  string(keyStoreName),
+			algorithmName: string(algName),
+		}
+	}
+
+	return cekTableEntry{
+		databaseID: int(databaseId),
+		keyId:      int(cekID),
+		keyVersion: int(cekVersion),
+		mdVersion:  cekMdVersion,
+		valueCount: int(cekValueCount),
+		cekValues:  cekValues,
+	}
+}
+
+// http://msdn.microsoft.com/en-us/library/dd357254.aspx
+func parseRow(r *tdsBuffer, s *tdsSession, columns []columnStruct, row []interface{}) {
+	for i, column := range columns {
+		columnContent := column.ti.Reader(&column.ti, r, nil)
+		if columnContent == nil {
+			row[i] = columnContent
+			continue
+		}
+
+		if column.isEncrypted() {
+			buffer := decryptColumn(column, s, columnContent)
+			// Decrypt
+			row[i] = column.cryptoMeta.typeInfo.Reader(&column.cryptoMeta.typeInfo, &buffer, column.cryptoMeta)
+		} else {
+			row[i] = columnContent
+		}
+	}
+}
+
+type RWCBuffer struct {
+	buffer *bytes.Reader
+}
+
+func (R RWCBuffer) Read(p []byte) (n int, err error) {
+	return R.buffer.Read(p)
+}
+
+func (R RWCBuffer) Write(p []byte) (n int, err error) {
+	return 0, nil
+}
+
+func (R RWCBuffer) Close() error {
+	return nil
+}
+
+func decryptColumn(column columnStruct, s *tdsSession, columnContent interface{}) tdsBuffer {
+	// Decrypt
+	cekValue := column.cryptoMeta.entry.cekValues[column.cryptoMeta.ordinal]
+	s.logger.Log(context.Background(), msdsn.LogMessages, fmt.Sprintf("Decrypting column %s. Key path: %s, Key store:%s, Algo: %s", column.ColName, cekValue.keyPath, cekValue.keyStoreName, cekValue.algorithmName))
+
+	// returning empty data for now
+	newBuff := make([]byte, 0)
+
+	rwc := RWCBuffer{
+		buffer: bytes.NewReader(newBuff),
+	}
+
+	column.cryptoMeta.typeInfo.Buffer = make([]byte, 0)
+	buffer := tdsBuffer{rpos: 0, rsize: len(newBuff), rbuf: newBuff, transport: rwc}
+	return buffer
+}
+
 // http://msdn.microsoft.com/en-us/library/dd304783.aspx
-func parseNbcRow(r *tdsBuffer, columns []columnStruct, row []interface{}) {
+func parseNbcRow(r *tdsBuffer, s *tdsSession, columns []columnStruct, row []interface{}) {
 	bitlen := (len(columns) + 7) / 8
 	pres := make([]byte, bitlen)
 	r.ReadFull(pres)
@@ -605,7 +842,15 @@ func parseNbcRow(r *tdsBuffer, columns []columnStruct, row []interface{}) {
 			row[i] = nil
 			continue
 		}
-		row[i] = col.ti.Reader(&col.ti, r)
+		columnContent := col.ti.Reader(&col.ti, r, nil)
+		if col.isEncrypted() {
+			buffer := decryptColumn(col, s, columnContent)
+			// Decrypt
+			row[i] = col.cryptoMeta.typeInfo.Reader(&col.cryptoMeta.typeInfo, &buffer, col.cryptoMeta)
+		} else {
+			row[i] = columnContent
+		}
+
 	}
 }
 
@@ -638,7 +883,7 @@ func parseInfo(r *tdsBuffer) (res Error) {
 }
 
 // https://msdn.microsoft.com/en-us/library/dd303881.aspx
-func parseReturnValue(r *tdsBuffer) (nv namedValue) {
+func parseReturnValue(r *tdsBuffer, s *tdsSession) (nv namedValue) {
 	/*
 		ParamOrdinal
 		ParamName
@@ -649,13 +894,21 @@ func parseReturnValue(r *tdsBuffer) (nv namedValue) {
 		CryptoMetadata
 		Value
 	*/
-	r.uint16()
-	nv.Name = r.BVarChar()
-	r.byte()
-	r.uint32() // UserType (uint16 prior to 7.2)
-	r.uint16()
-	ti := readTypeInfo(r)
-	nv.Value = ti.Reader(&ti, r)
+	_ = r.uint16()         // ParamOrdinal
+	nv.Name = r.BVarChar() // ParamName
+	_ = r.byte()           // Status
+
+	ti := getBaseTypeInfo(r, true) // UserType + Flags + TypeInfo
+
+	var cryptoMetadata *cryptoMetadata = nil
+	if s.alwaysEncrypted {
+		cm := parseCryptoMetadata(r, nil) // CryptoMetadata
+		cryptoMetadata = &cm
+	}
+
+	ti2 := readTypeInfo(r, ti.TypeId, cryptoMetadata)
+	nv.Value = ti2.Reader(&ti2, r, cryptoMetadata)
+
 	return
 }
 
@@ -782,7 +1035,7 @@ func processSingleResponse(ctx context.Context, sess *tdsSession, ch chan tokenS
 				return
 			}
 		case tokenColMetadata:
-			columns = parseColMetadata72(sess.buf)
+			columns = parseColMetadata72(sess.buf, sess)
 			ch <- columns
 			colsReceived = true
 			if outs.msgq != nil {
@@ -791,11 +1044,11 @@ func processSingleResponse(ctx context.Context, sess *tdsSession, ch chan tokenS
 
 		case tokenRow:
 			row := make([]interface{}, len(columns))
-			parseRow(sess.buf, columns, row)
+			parseRow(sess.buf, sess, columns, row)
 			ch <- row
 		case tokenNbcRow:
 			row := make([]interface{}, len(columns))
-			parseNbcRow(sess.buf, columns, row)
+			parseNbcRow(sess.buf, sess, columns, row)
 			ch <- row
 		case tokenEnvChange:
 			processEnvChg(ctx, sess)
@@ -823,7 +1076,7 @@ func processSingleResponse(ctx context.Context, sess *tdsSession, ch chan tokenS
 				_ = sqlexp.ReturnMessageEnqueue(ctx, outs.msgq, sqlexp.MsgNotice{Message: info})
 			}
 		case tokenReturnValue:
-			nv := parseReturnValue(sess.buf)
+			nv := parseReturnValue(sess.buf, sess)
 			if len(nv.Name) > 0 {
 				name := nv.Name[1:] // Remove the leading "@".
 				if ov, has := outs.params[name]; has {

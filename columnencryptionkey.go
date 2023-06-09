@@ -1,5 +1,10 @@
 package mssql
 
+import (
+	"fmt"
+	"time"
+)
+
 // cek ==> Column Encryption Key
 // Every row of an encrypted table has an associated list of keys used to decrypt its columns
 type cekTable struct {
@@ -30,6 +35,27 @@ func newCekTable(size uint16) cekTable {
 	return cekTable{entries: make([]cekTableEntry, size)}
 }
 
+// ColumnEncryptionKeyLifetime is the default lifetime of decrypted Column Encryption Keys in the global cache.
+// The default is 2 hours
+var ColumnEncryptionKeyLifetime time.Duration = 2 * time.Hour
+
+type cekCacheEntry struct {
+	expiry time.Time
+	key    []byte
+}
+
+type cekCache map[string]cekCacheEntry
+
+type cekProvider struct {
+	provider      ColumnEncryptionKeyProvider
+	decryptedKeys cekCache
+}
+
+// no synchronization on this map. Providers register during init.
+type columnEncryptionKeyProviderMap map[string]cekProvider
+
+var globalCekProviderFactoryMap = columnEncryptionKeyProviderMap{}
+
 // ColumnEncryptionKeyProvider is the interface for decrypting and encrypting column encryption keys.
 // It is similar to .Net https://learn.microsoft.com/dotnet/api/microsoft.data.sqlclient.sqlcolumnencryptionkeystoreprovider.
 type ColumnEncryptionKeyProvider interface {
@@ -45,4 +71,17 @@ type ColumnEncryptionKeyProvider interface {
 	// VerifyColumnMasterKeyMetadata verifies the specified signature is valid for the column master key
 	// with the specified key path and the specified enclave behavior. Return nil if not supported.
 	VerifyColumnMasterKeyMetadata(masterKeyPath string, allowEnclaveComputations bool) *bool
+	// KeyLifetime is an optional Duration. Keys fetched by this provider will be discarded after their lifetime expires.
+	// If it returns nil, the keys will expire based on the value of ColumnEncryptionKeyLifetime.
+	// If it returns zero, the keys will not be cached.
+	KeyLifetime() *time.Duration
+}
+
+func RegisterCekProvider(name string, provider ColumnEncryptionKeyProvider) error {
+	_, ok := globalCekProviderFactoryMap[name]
+	if ok {
+		return fmt.Errorf("CEK provider %s is already registered", name)
+	}
+	globalCekProviderFactoryMap[name] = cekProvider{provider: provider}
+	return nil
 }

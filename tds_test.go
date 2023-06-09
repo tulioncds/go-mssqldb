@@ -204,6 +204,59 @@ func TestSendSqlBatch(t *testing.T) {
 	}
 }
 
+func TestLoginWithColumnEncryption(t *testing.T) {
+	checkConnStr(t)
+	p, err := msdsn.Parse(makeConnStr(t).String())
+	if err != nil {
+		t.Error("parseConnectParams failed:", err.Error())
+		return
+	}
+	p.ColumnEncryption = true
+	tl := testLogger{t: t}
+	defer tl.StopLogging()
+	conn, err := connect(context.Background(), &Connector{params: p}, optionalLogger{loggerAdapter{&tl}}, p)
+	if err != nil {
+		t.Error("Open connection failed:", err.Error())
+		return
+	}
+	defer conn.buf.transport.Close()
+
+	headers := []headerStruct{
+		{hdrtype: dataStmHdrTransDescr,
+			data: transDescrHdr{0, 1}.pack()},
+	}
+	err = sendSqlBatch72(conn.buf, "select (@@microsoftversion / 0x1000000) & 0xff AS [VersionMajor]", headers, true)
+	if err != nil {
+		t.Error("Sending sql batch failed", err.Error())
+		return
+	}
+
+	reader := startReading(conn, context.Background(), outputs{})
+
+	err = reader.iterateResponse()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(reader.lastRow) == 0 {
+		t.Fatal("expected row but no row set")
+	}
+
+	switch value := reader.lastRow[0].(type) {
+	case int64:
+		if value > 12 {
+			if !conn.alwaysEncrypted {
+				t.Fatalf("SQL Version %d should have alwaysEncrypted == true", value)
+			}
+		} else if conn.alwaysEncrypted {
+			t.Fatalf("SQL Version %d should have alwaysEncrypted == false", value)
+		}
+
+	default:
+		t.Fatalf("Expected int64 return but got %v", value)
+	}
+}
+
 // returns parsed connection parameters derived from
 // environment variables
 func testConnParams(t testing.TB) msdsn.Config {
@@ -914,19 +967,22 @@ func BenchmarkPacketSize(b *testing.B) {
 		b.Run(bm.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				p.PacketSize = bm.packetSize
-				runBatch(b, p)
+				runBatch(b, "", p)
 			}
 		})
 	}
 }
 
-func runBatch(t testing.TB, p msdsn.Config) {
+func runBatch(t testing.TB, batch string, p msdsn.Config) int32 {
+	if len(batch) == 0 {
+		batch = "select 1"
+	}
 	tl := testLogger{t: t}
 	defer tl.StopLogging()
 	conn, err := connect(context.Background(), &Connector{params: p}, optionalLogger{loggerAdapter{&tl}}, p)
 	if err != nil {
 		t.Error("Open connection failed:", err.Error())
-		return
+		return 0
 	}
 	defer conn.buf.transport.Close()
 
@@ -934,10 +990,10 @@ func runBatch(t testing.TB, p msdsn.Config) {
 		{hdrtype: dataStmHdrTransDescr,
 			data: transDescrHdr{0, 1}.pack()},
 	}
-	err = sendSqlBatch72(conn.buf, "select 1", headers, true)
+	err = sendSqlBatch72(conn.buf, batch, headers, true)
 	if err != nil {
 		t.Error("Sending sql batch failed", err.Error())
-		return
+		return 0
 	}
 
 	reader := startReading(conn, context.Background(), outputs{})
@@ -953,11 +1009,11 @@ func runBatch(t testing.TB, p msdsn.Config) {
 
 	switch value := reader.lastRow[0].(type) {
 	case int32:
-		if value != 1 {
-			t.Error("Invalid value returned, should be 1", value)
-			return
-		}
+		return value
+	default:
+		t.Fatalf("expected an int32 return but got %v", value)
 	}
+	return 0
 }
 
 func TestGetDriverVersion(t *testing.T) {

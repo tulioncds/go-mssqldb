@@ -168,6 +168,11 @@ type tdsSession struct {
 	routedServer    string
 	routedPort      uint16
 	alwaysEncrypted bool
+	aeSettings      *alwaysEncryptedSettings
+}
+
+type alwaysEncryptedSettings struct {
+	enclaveType string
 }
 
 const (
@@ -179,10 +184,19 @@ const (
 )
 
 type columnStruct struct {
-	UserType uint32
-	Flags    uint16
-	ColName  string
-	ti       typeInfo
+	UserType   uint32
+	Flags      uint16
+	ColName    string
+	ti         typeInfo
+	cryptoMeta *cryptoMetadata
+}
+
+func (c columnStruct) isEncrypted() bool {
+	return isEncryptedFlag(c.Flags)
+}
+
+func isEncryptedFlag(flags uint16) bool {
+	return colFlagEncrypted == (flags & colFlagEncrypted)
 }
 
 type keySlice []uint8
@@ -1292,6 +1306,19 @@ initiate_connection:
 			case loginAckStruct:
 				sess.loginAck = token
 				loginAck = true
+			case featureExtAck:
+				for _, v := range token {
+					switch v := v.(type) {
+					case colAckStruct:
+						if v.Version <= 2 && v.Version > 0 {
+							sess.alwaysEncrypted = true
+							sess.aeSettings = &alwaysEncryptedSettings{}
+							if len(v.EnclaveType) > 0 {
+								sess.aeSettings.enclaveType = string(v.EnclaveType)
+							}
+						}
+					}
+				}
 			case doneStruct:
 				if token.isError() {
 					tokenErr := token.getError()
