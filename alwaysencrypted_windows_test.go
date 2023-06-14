@@ -1,13 +1,10 @@
 package mssql
 
 import (
-	"bytes"
 	"fmt"
-	"os/exec"
-	"strings"
 	"testing"
 
-	"github.com/Microsoft/go-winio/pkg/guid"
+	"github.com/microsoft/go-mssqldb/internal/certs"
 )
 
 func TestAlwaysEncryptedE2E(t *testing.T) {
@@ -17,7 +14,12 @@ func TestAlwaysEncryptedE2E(t *testing.T) {
 	}
 	conn, _ := open(t)
 	defer conn.Close()
-	certPath := provisionMasterKeyInCertStore(t)
+	thumbprint, err := certs.ProvisionMasterKeyInCertStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer certs.DeleteMasterKeyCert(thumbprint)
+	certPath := fmt.Sprintf(`CurrentUser/My/%s`, thumbprint)
 	s := fmt.Sprintf(createColumnMasterKey, certPath, certPath)
 	if _, err := conn.Exec(s); err != nil {
 		t.Fatalf("Unable to create CMK: %s", err.Error())
@@ -47,50 +49,6 @@ func TestAlwaysEncryptedE2E(t *testing.T) {
 }
 
 const (
-	createUserCertScript  = `New-SelfSignedCertificate -Subject "%s" -CertStoreLocation Cert:CurrentUser\My -KeyExportPolicy Exportable -Type DocumentEncryptionCert -KeyUsage KeyEncipherment -Keyspec KeyExchange -KeyLength 2048 | select {$_.Thumbprint}`
-	deleteUserCertScript  = `Get-ChildItem Cert:\CurrentUser\My\%s | Remove-Item -DeleteKey`
 	createColumnMasterKey = `CREATE COLUMN MASTER KEY [%s] WITH (KEY_STORE_PROVIDER_NAME= 'MSSQL_CERTIFICATE_STORE', KEY_PATH='%s')`
 	dropColumnMasterKey   = `DROP COLUMN MASTER KEY [%s]`
 )
-
-func provisionMasterKeyInCertStore(t *testing.T) string {
-	t.Helper()
-	var g guid.GUID
-	var err error
-	if g, err = guid.NewV4(); err != nil {
-		t.Fatalf("Unable to allocate a guid %v", err.Error())
-	}
-	subject := fmt.Sprintf(`gomssqltest-%s`, g.String())
-
-	cmd := exec.Command(`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, `/ExecutionPolicy`, `Unrestricted`, fmt.Sprintf(createUserCertScript, subject))
-	buf := &memoryBuffer{buf: new(bytes.Buffer)}
-	cmd.Stdout = buf
-	if err = cmd.Run(); err != nil {
-		t.Fatalf("Unable to create cert for encryption: %v", err.Error())
-	}
-	out := buf.buf.String()
-	thumbPrint := strings.Trim(out[strings.LastIndex(out, "-"):], "\r\n")
-	return fmt.Sprintf(`CurrentUser/My/%s`, thumbPrint)
-}
-
-func deleteMasterKeyCert(t *testing.T, thumbprint string) {
-	t.Helper()
-	cmd := exec.Command(`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, `/ExecutionPolicy`, `Unrestricted`, fmt.Sprintf(deleteUserCertScript, thumbprint))
-	if err := cmd.Run; err != nil {
-		t.Fatalf("Unable to delete user cert %s", thumbprint)
-	}
-}
-
-type memoryBuffer struct {
-	buf *bytes.Buffer
-}
-
-func (b *memoryBuffer) Write(p []byte) (n int, err error) {
-	return b.buf.Write(p)
-}
-
-func (b *memoryBuffer) Close() error {
-	return nil
-}
-
-// C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe /ExecutionPolicy Unrestricted New-SelfSignedCertificate -Subject "%s" -CertStoreLocation Cert:CurrentUser\My -KeyExportPolicy Exportable -Type DocumentEncryptionCert -KeyUsage KeyEncipherment -Keyspec KeyExchange -KeyLength 2048 | select {$_.Thumbprint}

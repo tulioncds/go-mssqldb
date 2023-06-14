@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+const (
+	CertificateStoreKeyProvider = "MSSQL_CERTIFICATE_STORE"
+	CspKeyProvider              = "MSSQL_CSP_PROVIDER"
+	CngKeyProvider              = "MSSQL_CNG_STORE"
+	AzureKeyVaultKeyProvider    = "AZURE_KEY_VAULT"
+	JavaKeyProvider             = "MSSQL_JAVA_KEYSTORE"
+)
+
 // cek ==> Column Encryption Key
 // Every row of an encrypted table has an associated list of keys used to decrypt its columns
 type cekTable struct {
