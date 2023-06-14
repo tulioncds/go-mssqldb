@@ -26,7 +26,7 @@ const (
 // pfx key paths are absolute file system paths that are operating system dependent.
 type LocalCertProvider struct {
 	// Name identifies which key store the provider supports.
-	Name string
+	name string
 	// AllowedLocations constrains which locations the provider will use to find certificates. If empty, all locations are allowed.
 	// When presented with a key store path not in the allowed list, the data will be returned still encrypted.
 	AllowedLocations []string
@@ -42,10 +42,10 @@ func (p LocalCertProvider) SetCertificatePassword(location string, password stri
 	p.passwords[location] = password
 }
 
-var PfxKeyProvider = LocalCertProvider{Name: PfxKeyProviderName, passwords: make(map[string]string), AllowedLocations: make([]string, 0)}
+var PfxKeyProvider = LocalCertProvider{name: PfxKeyProviderName, passwords: make(map[string]string), AllowedLocations: make([]string, 0)}
 
 func init() {
-	mssql.RegisterCekProvider(mssql.CertificateStoreKeyProvider, &PfxKeyProvider)
+	mssql.RegisterCekProvider("pfx", &PfxKeyProvider)
 }
 
 // DecryptColumnEncryptionKey decrypts the specified encrypted value of a column encryption key.
@@ -67,7 +67,7 @@ func (p *LocalCertProvider) DecryptColumnEncryptionKey(masterKeyPath string, enc
 	}
 	var cert *x509.Certificate
 	var pk interface{}
-	switch p.Name {
+	switch p.name {
 	case PfxKeyProviderName:
 		pk, cert = p.loadLocalCertificate(masterKeyPath)
 	case mssql.CertificateStoreKeyProvider:

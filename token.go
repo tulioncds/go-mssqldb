@@ -12,6 +12,9 @@ import (
 
 	"github.com/golang-sql/sqlexp"
 	"github.com/microsoft/go-mssqldb/msdsn"
+	"github.com/swisscom/mssql-always-encrypted/pkg/algorithms"
+	"github.com/swisscom/mssql-always-encrypted/pkg/encryption"
+	"github.com/swisscom/mssql-always-encrypted/pkg/keys"
 	"golang.org/x/text/encoding/unicode"
 )
 
@@ -816,12 +819,24 @@ func (R RWCBuffer) Close() error {
 }
 
 func decryptColumn(column columnStruct, s *tdsSession, columnContent interface{}) tdsBuffer {
-	// Decrypt
+	encType := encryption.From(column.cryptoMeta.encType)
 	cekValue := column.cryptoMeta.entry.cekValues[column.cryptoMeta.ordinal]
 	s.logger.Log(context.Background(), msdsn.LogMessages, fmt.Sprintf("Decrypting column %s. Key path: %s, Key store:%s, Algo: %s", column.ColName, cekValue.keyPath, cekValue.keyStoreName, cekValue.algorithmName))
 
-	// returning empty data for now
-	newBuff := make([]byte, 0)
+	cekProvider, ok := s.aeSettings.keyProviders[cekValue.keyStoreName]
+	if !ok {
+		panic(fmt.Errorf("Unable to find provider %s to decrypt CEK", cekValue.keyStoreName))
+	}
+	cek := cekProvider.provider.DecryptColumnEncryptionKey(cekValue.keyPath, cekValue.algorithmName, column.cryptoMeta.entry.cekValues[0].encryptedKey)
+	k := keys.NewAeadAes256CbcHmac256(cek)
+	alg := algorithms.NewAeadAes256CbcHmac256Algorithm(k, encType, byte(cekValue.cekVersion))
+	d, err := alg.Decrypt(columnContent.([]byte))
+	if err != nil {
+		panic(err)
+	}
+
+	var newBuff []byte
+	newBuff = append(newBuff, d...)
 
 	rwc := RWCBuffer{
 		buffer: bytes.NewReader(newBuff),

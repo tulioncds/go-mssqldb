@@ -69,10 +69,7 @@ func (d *Driver) OpenConnector(dsn string) (*Connector, error) {
 		return nil, err
 	}
 
-	return &Connector{
-		params: params,
-		driver: d,
-	}, nil
+	return newConnector(params, d), nil
 }
 
 func (d *Driver) Open(dsn string) (driver.Conn, error) {
@@ -122,10 +119,8 @@ func NewConnector(dsn string) (*Connector, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Connector{
-		params: params,
-		driver: driverInstanceNoProcess,
-	}
+	c := newConnector(params, driverInstanceNoProcess)
+
 	return c, nil
 }
 
@@ -146,9 +141,14 @@ func NewConnectorWithAccessTokenProvider(dsn string, tokenProvider func(ctx cont
 // NewConnectorConfig creates a new Connector for a DSN Config struct.
 // The returned connector may be used with sql.OpenDB.
 func NewConnectorConfig(config msdsn.Config) *Connector {
+	return newConnector(config, driverInstanceNoProcess)
+}
+
+func newConnector(config msdsn.Config, driver *Driver) *Connector {
 	return &Connector{
-		params: config,
-		driver: driverInstanceNoProcess,
+		params:       config,
+		driver:       driver,
+		keyProviders: make(columnEncryptionKeyProviderMap),
 	}
 }
 
@@ -197,6 +197,8 @@ type Connector struct {
 	// Dialer sets a custom dialer for all network operations.
 	// If Dialer is not set, normal net dialers are used.
 	Dialer Dialer
+
+	keyProviders columnEncryptionKeyProviderMap
 }
 
 type Dialer interface {
@@ -208,6 +210,11 @@ func (c *Connector) getDialer(p *msdsn.Config) Dialer {
 		return c.Dialer
 	}
 	return createDialer(p)
+}
+
+// RegisterCekProvider associated the given provider with the named key store. If an entry of the given name already exists, that entry is overwritten
+func (c *Connector) RegisterCekProvider(name string, provider ColumnEncryptionKeyProvider) {
+	c.keyProviders[name] = &cekProvider{provider: provider, decryptedKeys: make(cekCache)}
 }
 
 type Conn struct {
@@ -394,7 +401,7 @@ func (d *Driver) open(ctx context.Context, dsn string) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Connector{params: params}
+	c := newConnector(params, nil)
 	return d.connect(ctx, c, params)
 }
 

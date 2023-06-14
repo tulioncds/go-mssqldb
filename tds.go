@@ -172,7 +172,8 @@ type tdsSession struct {
 }
 
 type alwaysEncryptedSettings struct {
-	enclaveType string
+	enclaveType  string
+	keyProviders columnEncryptionKeyProviderMap
 }
 
 const (
@@ -1154,11 +1155,17 @@ initiate_connection:
 
 	outbuf := newTdsBuffer(packetSize, toconn)
 	sess := tdsSession{
-		buf:      outbuf,
-		logger:   logger,
-		logFlags: uint64(p.LogFlags),
+		buf:        outbuf,
+		logger:     logger,
+		logFlags:   uint64(p.LogFlags),
+		aeSettings: &alwaysEncryptedSettings{keyProviders: make(columnEncryptionKeyProviderMap)},
 	}
-
+	for i, p := range globalCekProviderFactoryMap {
+		sess.aeSettings.keyProviders[i] = p
+	}
+	for i, p := range c.keyProviders {
+		sess.aeSettings.keyProviders[i] = p
+	}
 	fedAuth := &featureExtFedAuth{
 		FedAuthLibrary: FedAuthLibraryReserved,
 	}

@@ -60,7 +60,7 @@ type cekProvider struct {
 }
 
 // no synchronization on this map. Providers register during init.
-type columnEncryptionKeyProviderMap map[string]cekProvider
+type columnEncryptionKeyProviderMap map[string]*cekProvider
 
 var globalCekProviderFactoryMap = columnEncryptionKeyProviderMap{}
 
@@ -90,6 +90,6 @@ func RegisterCekProvider(name string, provider ColumnEncryptionKeyProvider) erro
 	if ok {
 		return fmt.Errorf("CEK provider %s is already registered", name)
 	}
-	globalCekProviderFactoryMap[name] = cekProvider{provider: provider}
+	globalCekProviderFactoryMap[name] = &cekProvider{provider: provider, decryptedKeys: make(cekCache)}
 	return nil
 }
