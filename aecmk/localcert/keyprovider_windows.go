@@ -6,16 +6,15 @@ import (
 	"strings"
 	"unsafe"
 
-	mssql "github.com/microsoft/go-mssqldb"
-
+	"github.com/microsoft/go-mssqldb/aecmk"
 	"github.com/microsoft/go-mssqldb/internal/certs"
 	"golang.org/x/sys/windows"
 )
 
-var WindowsCertificateStoreKeyProvider = LocalCertProvider{name: mssql.CertificateStoreKeyProvider, passwords: make(map[string]string)}
+var WindowsCertificateStoreKeyProvider = LocalCertProvider{name: aecmk.CertificateStoreKeyProvider, passwords: make(map[string]string)}
 
 func init() {
-	mssql.RegisterCekProvider(mssql.CertificateStoreKeyProvider, &WindowsCertificateStoreKeyProvider)
+	aecmk.RegisterCekProvider(aecmk.CertificateStoreKeyProvider, &WindowsCertificateStoreKeyProvider)
 }
 
 func (p *LocalCertProvider) loadWindowsCertStoreCertificate(path string) (privateKey interface{}, cert *x509.Certificate) {

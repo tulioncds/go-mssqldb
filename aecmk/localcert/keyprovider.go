@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	mssql "github.com/microsoft/go-mssqldb"
+	"github.com/microsoft/go-mssqldb/aecmk"
 	ae "github.com/swisscom/mssql-always-encrypted/pkg"
 	pkcs "software.sslmate.com/src/go-pkcs12"
 )
@@ -45,7 +45,7 @@ func (p LocalCertProvider) SetCertificatePassword(location string, password stri
 var PfxKeyProvider = LocalCertProvider{name: PfxKeyProviderName, passwords: make(map[string]string), AllowedLocations: make([]string, 0)}
 
 func init() {
-	mssql.RegisterCekProvider("pfx", &PfxKeyProvider)
+	aecmk.RegisterCekProvider("pfx", &PfxKeyProvider)
 }
 
 // DecryptColumnEncryptionKey decrypts the specified encrypted value of a column encryption key.
@@ -70,7 +70,7 @@ func (p *LocalCertProvider) DecryptColumnEncryptionKey(masterKeyPath string, enc
 	switch p.name {
 	case PfxKeyProviderName:
 		pk, cert = p.loadLocalCertificate(masterKeyPath)
-	case mssql.CertificateStoreKeyProvider:
+	case aecmk.CertificateStoreKeyProvider:
 		pk, cert = p.loadWindowsCertStoreCertificate(masterKeyPath)
 	default:
 		return

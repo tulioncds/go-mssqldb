@@ -827,7 +827,7 @@ func decryptColumn(column columnStruct, s *tdsSession, columnContent interface{}
 	if !ok {
 		panic(fmt.Errorf("Unable to find provider %s to decrypt CEK", cekValue.keyStoreName))
 	}
-	cek := cekProvider.provider.DecryptColumnEncryptionKey(cekValue.keyPath, cekValue.algorithmName, column.cryptoMeta.entry.cekValues[0].encryptedKey)
+	cek := cekProvider.Provider.DecryptColumnEncryptionKey(cekValue.keyPath, cekValue.algorithmName, column.cryptoMeta.entry.cekValues[0].encryptedKey)
 	k := keys.NewAeadAes256CbcHmac256(cek)
 	alg := algorithms.NewAeadAes256CbcHmac256Algorithm(k, encType, byte(cekValue.cekVersion))
 	d, err := alg.Decrypt(columnContent.([]byte))
@@ -842,7 +842,7 @@ func decryptColumn(column columnStruct, s *tdsSession, columnContent interface{}
 		buffer: bytes.NewReader(newBuff),
 	}
 
-	column.cryptoMeta.typeInfo.Buffer = make([]byte, 0)
+	column.cryptoMeta.typeInfo.Buffer = d
 	buffer := tdsBuffer{rpos: 0, rsize: len(newBuff), rbuf: newBuff, transport: rwc}
 	return buffer
 }

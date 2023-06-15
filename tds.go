@@ -15,6 +15,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/microsoft/go-mssqldb/aecmk"
 	"github.com/microsoft/go-mssqldb/integratedauth"
 	"github.com/microsoft/go-mssqldb/msdsn"
 )
@@ -173,7 +174,7 @@ type tdsSession struct {
 
 type alwaysEncryptedSettings struct {
 	enclaveType  string
-	keyProviders columnEncryptionKeyProviderMap
+	keyProviders aecmk.ColumnEncryptionKeyProviderMap
 }
 
 const (
@@ -1158,11 +1159,10 @@ initiate_connection:
 		buf:        outbuf,
 		logger:     logger,
 		logFlags:   uint64(p.LogFlags),
-		aeSettings: &alwaysEncryptedSettings{keyProviders: make(columnEncryptionKeyProviderMap)},
+		aeSettings: &alwaysEncryptedSettings{keyProviders: make(aecmk.ColumnEncryptionKeyProviderMap)},
 	}
-	for i, p := range globalCekProviderFactoryMap {
-		sess.aeSettings.keyProviders[i] = p
-	}
+	sess.aeSettings.keyProviders = aecmk.GetGlobalCekProviders()
+
 	for i, p := range c.keyProviders {
 		sess.aeSettings.keyProviders[i] = p
 	}
@@ -1319,7 +1319,6 @@ initiate_connection:
 					case colAckStruct:
 						if v.Version <= 2 && v.Version > 0 {
 							sess.alwaysEncrypted = true
-							sess.aeSettings = &alwaysEncryptedSettings{}
 							if len(v.EnclaveType) > 0 {
 								sess.aeSettings.enclaveType = string(v.EnclaveType)
 							}

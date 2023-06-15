@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	_ "github.com/microsoft/go-mssqldb/aecmk/localcert"
 	"github.com/microsoft/go-mssqldb/internal/certs"
 )
 
@@ -26,6 +27,8 @@ func TestAlwaysEncryptedE2E(t *testing.T) {
 	}
 	defer conn.Exec(fmt.Sprintf(dropColumnMasterKey, certPath))
 	// TODO: Implement encryption and insert encrypted values into a table using custom CEK
+	// Currently this test only passes when run against a particular database whose
+	// columns are encrypted using a cert on a developer's machine.
 	rows, err := conn.Query("select top (1) col1, col2 from Table_1")
 	if err != nil {
 		t.Fatalf("Unable to query encrypted columns: %s", err.Error())

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	mssql "github.com/microsoft/go-mssqldb"
+	"github.com/microsoft/go-mssqldb/aecmk"
 	"github.com/microsoft/go-mssqldb/internal/certs"
 )
 
@@ -15,7 +15,7 @@ func TestLoadWindowsCertStoreCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer certs.DeleteMasterKeyCert(thumbprint)
-	provider := &LocalCertProvider{Name: mssql.AzureKeyVaultKeyProvider}
+	provider := aecmk.GetGlobalCekProviders()[aecmk.CertificateStoreKeyProvider].Provider.(*LocalCertProvider)
 	pk, cert := provider.loadWindowsCertStoreCertificate("CurrentUser/My/" + thumbprint)
 	switch z := pk.(type) {
 	case *rsa.PrivateKey:

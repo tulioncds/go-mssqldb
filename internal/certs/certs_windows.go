@@ -8,9 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"reflect"
 
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -18,35 +16,25 @@ import (
 
 func FindCertBySignatureHash(storeHandle windows.Handle, hash []byte) (interface{}, *x509.Certificate) {
 	var certContext *windows.CertContext
-	var prevCertContext *windows.CertContext
 	var err error
 	cryptoAPIBlob := windows.CryptHashBlob{
 		Size: uint32(len(hash)),
 		Data: &hash[0],
 	}
 
-	for {
-		certContext, err = windows.CertFindCertificateInStore(
-			storeHandle,
-			windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING,
-			0,
-			windows.CERT_FIND_HASH,
-			unsafe.Pointer(&cryptoAPIBlob),
-			prevCertContext)
-		if certContext == nil || err != nil {
-			break
-		}
-		prevCertContext = certContext
-	}
+	certContext, err = windows.CertFindCertificateInStore(
+		storeHandle,
+		windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING,
+		0,
+		windows.CERT_FIND_HASH,
+		unsafe.Pointer(&cryptoAPIBlob),
+		nil)
 
-	if prevCertContext == nil {
-		if err == nil {
-			err = syscall.GetLastError()
-		}
+	if err != nil {
+
 		panic(fmt.Errorf("Unable to find certificate by signature hash. %s", err.Error()))
 	}
-
-	pk, cert, err := certContextToX509(prevCertContext)
+	pk, cert, err := certContextToX509(certContext)
 	if err != nil {
 		panic(err)
 	}
@@ -55,11 +43,11 @@ func FindCertBySignatureHash(storeHandle windows.Handle, hash []byte) (interface
 }
 
 func certContextToX509(ctx *windows.CertContext) (pk interface{}, cert *x509.Certificate, err error) {
-	var der []byte
-	slice := (*reflect.SliceHeader)(unsafe.Pointer(&der))
-	slice.Data = uintptr(unsafe.Pointer(ctx.EncodedCert))
-	slice.Len = int(ctx.Length)
-	slice.Cap = int(ctx.Length)
+	// To ensure we don't mess with the cert context's memory, use a copy of it.
+	src := (*[1 << 20]byte)(unsafe.Pointer(ctx.EncodedCert))[:ctx.Length:ctx.Length]
+	der := make([]byte, int(ctx.Length))
+	copy(der, src)
+
 	cert, err = x509.ParseCertificate(der)
 	if err != nil {
 		return

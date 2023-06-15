@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/golang-sql/sqlexp"
+	"github.com/microsoft/go-mssqldb/aecmk"
 	"github.com/microsoft/go-mssqldb/internal/querytext"
 	"github.com/microsoft/go-mssqldb/msdsn"
 )
@@ -148,7 +149,7 @@ func newConnector(config msdsn.Config, driver *Driver) *Connector {
 	return &Connector{
 		params:       config,
 		driver:       driver,
-		keyProviders: make(columnEncryptionKeyProviderMap),
+		keyProviders: make(aecmk.ColumnEncryptionKeyProviderMap),
 	}
 }
 
@@ -198,7 +199,7 @@ type Connector struct {
 	// If Dialer is not set, normal net dialers are used.
 	Dialer Dialer
 
-	keyProviders columnEncryptionKeyProviderMap
+	keyProviders aecmk.ColumnEncryptionKeyProviderMap
 }
 
 type Dialer interface {
@@ -213,8 +214,8 @@ func (c *Connector) getDialer(p *msdsn.Config) Dialer {
 }
 
 // RegisterCekProvider associated the given provider with the named key store. If an entry of the given name already exists, that entry is overwritten
-func (c *Connector) RegisterCekProvider(name string, provider ColumnEncryptionKeyProvider) {
-	c.keyProviders[name] = &cekProvider{provider: provider, decryptedKeys: make(cekCache)}
+func (c *Connector) RegisterCekProvider(name string, provider aecmk.ColumnEncryptionKeyProvider) {
+	c.keyProviders[name] = &aecmk.CekProvider{Provider: provider, DecryptedKeys: make(aecmk.CekCache)}
 }
 
 type Conn struct {
