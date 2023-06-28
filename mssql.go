@@ -686,6 +686,9 @@ func (s *Stmt) queryContext(ctx context.Context, args []namedValue) (rows driver
 	if !s.c.connectionGood {
 		return nil, driver.ErrBadConn
 	}
+	if s.c.sess.alwaysEncrypted && len(args) > 0 {
+		args, err = s.encryptArgs(ctx, args)
+	}
 	if err = s.sendQuery(ctx, args); err != nil {
 		return nil, s.c.checkBadConn(ctx, err, true)
 	}
