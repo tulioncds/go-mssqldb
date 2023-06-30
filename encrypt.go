@@ -42,13 +42,15 @@ type parameterEncData struct {
 // when Always Encrypted is turned on, we have to ask the server for metadata about how to encrypt input parameters.
 func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArgs []namedValue, err error) {
 	q := Stmt{c: s.c,
-		paramCount: s.paramCount,
-		query:      "sp_describe_parameter_encryption",
+		paramCount:     s.paramCount,
+		query:          "sp_describe_parameter_encryption",
+		skipEncryption: true,
 	}
 	newArgs, err := s.prepareEncryptionQuery(isProc(s.query), s.query, args)
 	if err != nil {
 		return
 	}
+	// TODO: Consider not using recursion
 	rows, err := q.queryContext(ctx, newArgs)
 	if err != nil {
 		return

@@ -444,10 +444,11 @@ func (c *Conn) Close() error {
 }
 
 type Stmt struct {
-	c          *Conn
-	query      string
-	paramCount int
-	notifSub   *queryNotifSub
+	c              *Conn
+	query          string
+	paramCount     int
+	notifSub       *queryNotifSub
+	skipEncryption bool
 }
 
 type queryNotifSub struct {
@@ -471,7 +472,7 @@ func (c *Conn) prepareContext(ctx context.Context, query string) (*Stmt, error) 
 	if c.processQueryText {
 		query, paramCount = querytext.ParseParams(query)
 	}
-	return &Stmt{c, query, paramCount, nil}, nil
+	return &Stmt{c, query, paramCount, nil, false}, nil
 }
 
 func (s *Stmt) Close() error {
@@ -676,6 +677,10 @@ func convertOldArgs(args []driver.Value) []namedValue {
 	return list
 }
 
+func (s *Stmt) doEncryption() bool {
+	return !s.skipEncryption && s.c.sess.alwaysEncrypted
+}
+
 func (s *Stmt) Query(args []driver.Value) (driver.Rows, error) {
 	defer s.c.clearOuts()
 
@@ -686,8 +691,11 @@ func (s *Stmt) queryContext(ctx context.Context, args []namedValue) (rows driver
 	if !s.c.connectionGood {
 		return nil, driver.ErrBadConn
 	}
-	if s.c.sess.alwaysEncrypted && len(args) > 0 {
+	if s.doEncryption() && len(args) > 0 {
 		args, err = s.encryptArgs(ctx, args)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if err = s.sendQuery(ctx, args); err != nil {
 		return nil, s.c.checkBadConn(ctx, err, true)
@@ -755,6 +763,12 @@ func (s *Stmt) Exec(args []driver.Value) (driver.Result, error) {
 func (s *Stmt) exec(ctx context.Context, args []namedValue) (res driver.Result, err error) {
 	if !s.c.connectionGood {
 		return nil, driver.ErrBadConn
+	}
+	if s.doEncryption() && len(args) > 0 {
+		args, err = s.encryptArgs(ctx, args)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if err = s.sendQuery(ctx, args); err != nil {
 		return nil, s.c.checkBadConn(ctx, err, true)
@@ -1045,7 +1059,7 @@ func (c *Conn) Ping(ctx context.Context) error {
 	if !c.connectionGood {
 		return driver.ErrBadConn
 	}
-	stmt := &Stmt{c, `select 1;`, 0, nil}
+	stmt := &Stmt{c, `select 1;`, 0, nil, true}
 	_, err := stmt.ExecContext(ctx, nil)
 	return err
 }

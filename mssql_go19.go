@@ -29,11 +29,17 @@ type MssqlStmt = Stmt               // Deprecated: users should transition to th
 
 var _ driver.NamedValueChecker = &Conn{}
 
-// VarChar parameter types.
+// VarChar is used to encode a string parameter as VarChar instead of a sized NVarChar
 type VarChar string
 
+// NVarCharMax is used to encode a string parameter as NVarChar(max) instead of a sized NVarChar
 type NVarCharMax string
+
+// VarCharMax is used to encode a string parameter as VarChar(max) instead of a sized NVarChar
 type VarCharMax string
+
+// NChar is used to encode a string parameter as NChar instead of a sized NVarChar
+type NChar string
 
 // DateTime1 encodes parameters to original DateTime SQL types.
 type DateTime1 time.Time
@@ -50,6 +56,8 @@ func convertInputParameter(val interface{}) (interface{}, error) {
 	case NVarCharMax:
 		return val, nil
 	case VarCharMax:
+		return val, nil
+	case NChar:
 		return val, nil
 	case DateTime1:
 		return val, nil
@@ -144,6 +152,10 @@ func (s *Stmt) makeParamExtra(val driver.Value) (res param, err error) {
 		res.ti.TypeId = typeNVarChar
 		res.buffer = str2ucs2(string(val))
 		res.ti.Size = 0 // currently zero forces nvarchar(max)
+	case NChar:
+		res.ti.TypeId = typeNChar
+		res.buffer = str2ucs2(string(val))
+		res.ti.Size = len(res.buffer)
 	case DateTime1:
 		t := time.Time(val)
 		res.ti.TypeId = typeDateTimeN
