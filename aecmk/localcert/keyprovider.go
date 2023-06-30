@@ -1,17 +1,23 @@
 package localcert
 
 import (
+	"crypto"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/binary"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/microsoft/go-mssqldb/aecmk"
 	ae "github.com/swisscom/mssql-always-encrypted/pkg"
+	"golang.org/x/text/encoding/unicode"
 	pkcs "software.sslmate.com/src/go-pkcs12"
 )
 
@@ -52,21 +58,10 @@ func init() {
 // The encrypted value is expected to be encrypted using the column master key with the specified key path and using the specified algorithm.
 func (p *LocalCertProvider) DecryptColumnEncryptionKey(masterKeyPath string, encryptionAlgorithm string, encryptedCek []byte) (decryptedKey []byte) {
 	decryptedKey = nil
-	allowed := len(p.AllowedLocations) == 0
-	if !allowed {
-	loop:
-		for _, l := range p.AllowedLocations {
-			if l == masterKeyPath {
-				allowed = true
-				break loop
-			}
-		}
-	}
+	pk, cert, allowed := p.tryLoadCertificate(masterKeyPath)
 	if !allowed {
 		return
 	}
-	var cert *x509.Certificate
-	var pk interface{}
 	switch p.name {
 	case PfxKeyProviderName:
 		pk, cert = p.loadLocalCertificate(masterKeyPath)
@@ -83,6 +78,29 @@ func (p *LocalCertProvider) DecryptColumnEncryptionKey(masterKeyPath string, enc
 	decryptedKey, err := cekv.Decrypt(pk.(*rsa.PrivateKey))
 	if err != nil {
 		panic(err)
+	}
+	return
+}
+
+func (p *LocalCertProvider) tryLoadCertificate(masterKeyPath string) (privateKey interface{}, cert *x509.Certificate, allowed bool) {
+	allowed = len(p.AllowedLocations) == 0
+	if !allowed {
+	loop:
+		for _, l := range p.AllowedLocations {
+			if l == masterKeyPath {
+				allowed = true
+				break loop
+			}
+		}
+	}
+	if !allowed {
+		return
+	}
+	switch p.name {
+	case PfxKeyProviderName:
+		privateKey, cert = p.loadLocalCertificate(masterKeyPath)
+	case aecmk.CertificateStoreKeyProvider:
+		privateKey, cert = p.loadWindowsCertStoreCertificate(masterKeyPath)
 	}
 	return
 }
@@ -112,7 +130,49 @@ func (p *LocalCertProvider) loadLocalCertificate(path string) (privateKey interf
 
 // EncryptColumnEncryptionKey encrypts a column encryption key using the column master key with the specified key path and using the specified algorithm.
 func (p *LocalCertProvider) EncryptColumnEncryptionKey(masterKeyPath string, encryptionAlgorithm string, cek []byte) []byte {
-	return nil
+
+	validateEncryptionAlgorithm(encryptionAlgorithm)
+	validateKeyPathLength(masterKeyPath)
+	pk, cert, allowed := p.tryLoadCertificate(masterKeyPath)
+	if !allowed {
+		panic(fmt.Errorf("Key path not allowed for use in column key encryption"))
+	}
+	publicKey := cert.PublicKey.(*rsa.PublicKey)
+	keySizeInBytes := publicKey.Size()
+
+	enc := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM).NewEncoder()
+	// Start with version byte == 1
+	buf := []byte{byte(1)}
+	// EncryptedColumnEncryptionKey = version + keyPathLength + ciphertextLength + keyPath + ciphertext +  signature
+	// version
+	keyPathBytes, err := enc.Bytes([]byte(strings.ToLower(masterKeyPath)))
+	if err != nil {
+		panic(fmt.Errorf("Unable to serialize key path %w", err))
+	}
+	// keyPathLength
+	buf = binary.LittleEndian.AppendUint16(buf, uint16(len(keyPathBytes)))
+
+	cipherText, err := rsa.EncryptOAEP(sha1.New(), rand.Reader, publicKey, cek, []byte{})
+	if err != nil {
+		panic(fmt.Errorf("Unable to encrypt data %w", err))
+	}
+	// ciphertextLength
+	buf = binary.LittleEndian.AppendUint16(buf, uint16(len(cipherText)))
+	// keypath
+	buf = append(buf, keyPathBytes...)
+	// ciphertext
+	buf = append(buf, cipherText...)
+	hash := sha256.Sum256(buf)
+	// signature is the signed hash of the current buf
+	sig, err := rsa.SignPKCS1v15(rand.Reader, pk.(*rsa.PrivateKey), crypto.SHA256, hash[:])
+	if err != nil {
+		panic(err)
+	}
+	if len(sig) != keySizeInBytes {
+		panic("Signature length doesn't match certificate key size")
+	}
+	buf = append(buf, sig...)
+	return buf
 }
 
 // SignColumnMasterKeyMetadata digitally signs the column master key metadata with the column master key
@@ -133,6 +193,18 @@ func (p *LocalCertProvider) VerifyColumnMasterKeyMetadata(masterKeyPath string, 
 // If it returns zero, the keys will not be cached.
 func (p *LocalCertProvider) KeyLifetime() *time.Duration {
 	return nil
+}
+
+func validateEncryptionAlgorithm(encryptionAlgorithm string) {
+	if !strings.EqualFold(encryptionAlgorithm, "RSA_OAEP") {
+		panic(fmt.Errorf("Unsupported encryption algorithm %s", encryptionAlgorithm))
+	}
+}
+
+func validateKeyPathLength(keyPath string) {
+	if len(keyPath) > 32767 {
+		panic(fmt.Errorf("Key path is too long. %d", len(keyPath)))
+	}
 }
 
 // InvalidCertificatePathError indicates the provided path could not be used to load a certificate

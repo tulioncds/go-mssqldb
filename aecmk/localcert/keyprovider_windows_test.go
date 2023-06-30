@@ -28,3 +28,19 @@ func TestLoadWindowsCertStoreCertificate(t *testing.T) {
 		t.Fatalf("Wrong cert loaded: %s", cert.Subject.String())
 	}
 }
+
+func TestEncryptDecryptEncryptionKeyRoundTrip(t *testing.T) {
+	thumbprint, err := certs.ProvisionMasterKeyInCertStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer certs.DeleteMasterKeyCert(thumbprint)
+	bytesToEncrypt := []byte{1, 2, 3}
+	keyPath := "CurrentUser/My/" + thumbprint
+	provider := aecmk.GetGlobalCekProviders()[aecmk.CertificateStoreKeyProvider].Provider.(*LocalCertProvider)
+	encryptedBytes := provider.EncryptColumnEncryptionKey(keyPath, "RSA_OAEP", bytesToEncrypt)
+	decryptedBytes := provider.DecryptColumnEncryptionKey(keyPath, "RSA_OAEP", encryptedBytes)
+	if len(decryptedBytes) != 3 || decryptedBytes[0] != 1 || decryptedBytes[1] != 2 || decryptedBytes[2] != 3 {
+		t.Fatalf("Encrypt/Decrypt did not roundtrip. encryptedBytes:%v, decryptedBytes: %v", encryptedBytes, decryptedBytes)
+	}
+}
