@@ -2,6 +2,7 @@ package aecmk
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -11,22 +12,60 @@ const (
 	CngKeyProvider              = "MSSQL_CNG_STORE"
 	AzureKeyVaultKeyProvider    = "AZURE_KEY_VAULT"
 	JavaKeyProvider             = "MSSQL_JAVA_KEYSTORE"
+	KeyEncryptionAlgorithm      = "RSA_OAEP"
 )
 
 // ColumnEncryptionKeyLifetime is the default lifetime of decrypted Column Encryption Keys in the global cache.
 // The default is 2 hours
 var ColumnEncryptionKeyLifetime time.Duration = 2 * time.Hour
 
-type CekCacheEntry struct {
+type cekCacheEntry struct {
 	Expiry time.Time
 	Key    []byte
 }
 
-type CekCache map[string]CekCacheEntry
+type cekCache map[string]cekCacheEntry
 
 type CekProvider struct {
 	Provider      ColumnEncryptionKeyProvider
-	DecryptedKeys CekCache
+	decryptedKeys cekCache
+	mutex         sync.Mutex
+}
+
+func NewCekProvider(provider ColumnEncryptionKeyProvider) *CekProvider {
+	return &CekProvider{Provider: provider, decryptedKeys: make(cekCache), mutex: sync.Mutex{}}
+}
+
+func (cp *CekProvider) GetDecryptedKey(keyPath string, encryptedBytes []byte) (decryptedKey []byte, err error) {
+	cp.mutex.Lock()
+	ev, cachedKey := cp.decryptedKeys[keyPath]
+	if cachedKey {
+		if ev.Expiry.Before(time.Now()) {
+			delete(cp.decryptedKeys, keyPath)
+			cachedKey = false
+		} else {
+			decryptedKey = ev.Key
+		}
+	}
+	// decrypting a key can take a while, so let multiple callers race
+	// Key providers can choose to optimize their own concurrency.
+	// For example - there's probably minimal value in serializing access to a local certificate,
+	// but there'd be high value in having a queue of waiters for decrypting a key stored in the cloud.
+	cp.mutex.Unlock()
+	if !cachedKey {
+		decryptedKey = cp.Provider.DecryptColumnEncryptionKey(keyPath, KeyEncryptionAlgorithm, encryptedBytes)
+	}
+	if !cachedKey {
+		duration := cp.Provider.KeyLifetime()
+		if duration == nil {
+			duration = &ColumnEncryptionKeyLifetime
+		}
+		expiry := time.Now().Add(*duration)
+		cp.mutex.Lock()
+		cp.decryptedKeys[keyPath] = cekCacheEntry{Expiry: expiry, Key: decryptedKey}
+		cp.mutex.Unlock()
+	}
+	return
 }
 
 // no synchronization on this map. Providers register during init.
@@ -60,7 +99,7 @@ func RegisterCekProvider(name string, provider ColumnEncryptionKeyProvider) erro
 	if ok {
 		return fmt.Errorf("CEK provider %s is already registered", name)
 	}
-	globalCekProviderFactoryMap[name] = &CekProvider{Provider: provider, DecryptedKeys: CekCache{}}
+	globalCekProviderFactoryMap[name] = &CekProvider{Provider: provider, decryptedKeys: cekCache{}, mutex: sync.Mutex{}}
 	return nil
 }
 

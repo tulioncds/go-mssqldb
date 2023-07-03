@@ -30,7 +30,7 @@ func TestAlwaysEncryptedE2E(t *testing.T) {
 	defer conn.Exec(fmt.Sprintf(dropColumnMasterKey, certPath))
 	r, _ := rand.Int(rand.Reader, big.NewInt(1000))
 	cekName := fmt.Sprintf("mssqlCek%d", r.Int64())
-	encryptedCek := localcert.WindowsCertificateStoreKeyProvider.EncryptColumnEncryptionKey(certPath, "RSA_OAEP", []byte(certPath))
+	encryptedCek := localcert.WindowsCertificateStoreKeyProvider.EncryptColumnEncryptionKey(certPath, KeyEncryptionAlgorithm, []byte(certPath))
 	createCek := fmt.Sprintf(createColumnEncryptionKey, cekName, certPath, encryptedCek)
 	_, err = conn.Exec(createCek)
 	if err != nil {

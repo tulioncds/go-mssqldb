@@ -6,6 +6,7 @@ const (
 	CngKeyProvider              = "MSSQL_CNG_STORE"
 	AzureKeyVaultKeyProvider    = "AZURE_KEY_VAULT"
 	JavaKeyProvider             = "MSSQL_JAVA_KEYSTORE"
+	KeyEncryptionAlgorithm      = "RSA_OAEP"
 )
 
 // cek ==> Column Encryption Key

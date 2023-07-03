@@ -3,9 +3,15 @@ package mssql
 import (
 	"context"
 	"database/sql/driver"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/microsoft/go-mssqldb/msdsn"
+	"github.com/swisscom/mssql-always-encrypted/pkg/algorithms"
+	"github.com/swisscom/mssql-always-encrypted/pkg/encryption"
+	"github.com/swisscom/mssql-always-encrypted/pkg/keys"
 )
 
 type ColumnEncryptionType int
@@ -13,7 +19,7 @@ type ColumnEncryptionType int
 var (
 	ColumnEncryptionPlainText     ColumnEncryptionType = 0
 	ColumnEncryptionDeterministic ColumnEncryptionType = 1
-	ColumnEncryptionRandomized    ColumnEncryptionType = 1
+	ColumnEncryptionRandomized    ColumnEncryptionType = 2
 )
 
 type cekData struct {
@@ -28,6 +34,7 @@ type cekData struct {
 	algorithm       string
 	byEnclave       bool
 	cmkSignature    string
+	decryptedValue  []byte
 }
 
 type parameterEncData struct {
@@ -39,7 +46,14 @@ type parameterEncData struct {
 	ruleVersion int
 }
 
+type paramMapEntry struct {
+	cek *cekData
+	p   *parameterEncData
+}
+
 // when Always Encrypted is turned on, we have to ask the server for metadata about how to encrypt input parameters.
+// This function stores the relevant encryption parameters in a copy of the args so they can be
+// encrypted just before being sent to the server
 func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArgs []namedValue, err error) {
 	q := Stmt{c: s.c,
 		paramCount:     s.paramCount,
@@ -59,8 +73,33 @@ func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArg
 	if err != nil {
 		return
 	}
-	fmt.Printf("cekInfo: %v\nparamsInfo:%v\n", cekInfo, paramsInfo)
-	return args, nil
+	s.c.sess.logger.Log(ctx, msdsn.LogDebug, fmt.Sprintf("cekInfo: %v\nparamsInfo:%v\n", cekInfo, paramsInfo))
+	err = s.decryptCek(cekInfo)
+	if err != nil {
+		return
+	}
+	paramMap := make(map[string]paramMapEntry)
+	for _, p := range paramsInfo {
+		paramMap[p.name] = paramMapEntry{cekInfo[p.cekOrdinal-1], &p}
+	}
+	encryptedArgs = make([]namedValue, len(args))
+	for i, a := range args {
+		encryptedArgs[i] = a
+		name := ""
+		if len(a.Name) > 0 {
+			name = "@" + a.Name
+		} else {
+			name = fmt.Sprintf("@p%d", a.Ordinal)
+		}
+		info := paramMap[name]
+
+		if info.p.encType == ColumnEncryptionPlainText {
+			continue
+		}
+
+		encryptedArgs[i].encrypt = getEncryptor(info)
+	}
+	return encryptedArgs, nil
 }
 
 // returns the arguments to sp_describe_parameter_encryption
@@ -91,6 +130,63 @@ func (s *Stmt) buildParametersForColumnEncryption(args []namedValue) (parameters
 	}
 	parameters = strings.Join(decls, ", ")
 	return
+}
+
+func (s *Stmt) decryptCek(cekInfo []*cekData) error {
+	for _, info := range cekInfo {
+		kp, ok := s.c.sess.aeSettings.keyProviders[info.cmkStoreName]
+		if !ok {
+			return fmt.Errorf("No provider found for key store %s", info.cmkStoreName)
+		}
+		dk, err := kp.GetDecryptedKey(info.cmkPath, info.encryptedValue)
+		if err != nil {
+			return err
+		}
+		info.decryptedValue = dk
+	}
+	return nil
+}
+
+func getEncryptor(info paramMapEntry) valueEncryptor {
+	k := keys.NewAeadAes256CbcHmac256(info.cek.decryptedValue)
+	alg := algorithms.NewAeadAes256CbcHmac256Algorithm(k, encryption.From(byte(info.p.encType)), byte(info.cek.version))
+	// Metadata to append to an encrypted parameter. Doesn't include original typeinfo
+	// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/619c43b6-9495-4a58-9e49-a4950db245b3
+	// ParamCipherInfo  =   TYPE_INFO
+	// 		EncryptionAlgo (byte)
+	// 		[AlgoName] (b_varchar) unused, no custom algorithm
+	// 		EncryptionType (byte)
+	// 		DatabaseId (ulong)
+	// 		CekId      (ulong)
+	// 		CekVersion (ulong)
+	// 		CekMDVersion (ulonglong) - really a byte array
+	// 		NormVersion (byte)
+	//              algo+ enctype+ dbid+ keyid+ keyver= normversion
+	metadataLen := 1 + 1 + 4 + 4 + 4 + 1
+	metadataLen += len(info.cek.metadataVersion)
+	metadata := make([]byte, metadataLen)
+	offset := 0
+	// AEAD_AES_256_CBC_HMAC_SHA256
+	metadata[offset] = byte(info.p.algorithm)
+	offset++
+	metadata[offset] = byte(info.p.encType)
+	offset++
+	binary.LittleEndian.PutUint32(metadata[offset:], uint32(info.cek.database_id))
+	offset += 4
+	binary.LittleEndian.PutUint32(metadata[offset:], uint32(info.cek.id))
+	offset += 4
+	binary.LittleEndian.PutUint32(metadata[offset:], uint32(info.cek.version))
+	offset += 4
+	copy(metadata[offset:], info.cek.metadataVersion)
+	offset += len(info.cek.metadataVersion)
+	metadata[offset] = byte(info.p.ruleVersion)
+	return func(b []byte) ([]byte, []byte, error) {
+		encryptedData, err := alg.Encrypt(b)
+		if err != nil {
+			return nil, nil, err
+		}
+		return encryptedData, metadata, nil
+	}
 }
 
 // Based on the .Net implementation at https://github.com/dotnet/SqlClient/blob/2b31810ce69b88d707450e2059ee8fbde63f774f/src/Microsoft.Data.SqlClient/netcore/src/Microsoft/Data/SqlClient/SqlCommand.cs#L6040
@@ -129,12 +225,12 @@ func appendPrefixedParameterName(b *strings.Builder, p string) {
 	}
 }
 
-func processDescribeParameterEncryption(rows driver.Rows) (cekInfo []cekData, paramInfo []parameterEncData, err error) {
-	cekInfo = make([]cekData, 0)
+func processDescribeParameterEncryption(rows driver.Rows) (cekInfo []*cekData, paramInfo []parameterEncData, err error) {
+	cekInfo = make([]*cekData, 0)
 	values := make([]driver.Value, 9)
 	qerr := rows.Next(values)
 	for qerr == nil {
-		cekInfo = append(cekInfo, cekData{ordinal: int(values[0].(int64)),
+		cekInfo = append(cekInfo, &cekData{ordinal: int(values[0].(int64)),
 			database_id:     int(values[1].(int64)),
 			id:              int(values[2].(int64)),
 			version:         int(values[3].(int64)),

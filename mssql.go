@@ -213,9 +213,9 @@ func (c *Connector) getDialer(p *msdsn.Config) Dialer {
 	return createDialer(p)
 }
 
-// RegisterCekProvider associated the given provider with the named key store. If an entry of the given name already exists, that entry is overwritten
+// RegisterCekProvider associates the given provider with the named key store. If an entry of the given name already exists, that entry is overwritten
 func (c *Connector) RegisterCekProvider(name string, provider aecmk.ColumnEncryptionKeyProvider) {
-	c.keyProviders[name] = &aecmk.CekProvider{Provider: provider, DecryptedKeys: make(aecmk.CekCache)}
+	c.keyProviders[name] = aecmk.NewCekProvider(provider)
 }
 
 type Conn struct {
@@ -654,16 +654,36 @@ func (s *Stmt) makeRPCParams(args []namedValue, isProc bool) ([]param, []string,
 		if isOutputValue(val.Value) {
 			output = outputSuffix
 		}
+		if val.encrypt != nil {
+			// Encrypted parameters have a few requirements:
+			// 1. Copy original typeinfo to a block after the data
+			// 2. Set the parameter type to varbinary(max)
+			// 3. Append the crypto metadata bytes
+			params[i+offset].tiOriginal = params[i+offset].ti
+			params[i+offset].Flags |= fEncrypted
+			encryptedBytes, metadata, err := val.encrypt(params[i+offset].buffer)
+			if err != nil {
+				return nil, nil, err
+			}
+			params[i+offset].cipherInfo = metadata
+			params[i+offset].ti.TypeId = typeBigVarBin
+			params[i+offset].ti.Buffer = encryptedBytes
+			params[i+offset].ti.Size = 0
+		}
 		decls[i] = fmt.Sprintf("%s %s%s", name, makeDecl(params[i+offset].ti), output)
 
 	}
 	return params, decls, nil
 }
 
+// Encrypts the input bytes. Returns the encrypted bytes followed by the encryption metadata to append to the packet.
+type valueEncryptor func(bytes []byte) ([]byte, []byte, error)
+
 type namedValue struct {
 	Name    string
 	Ordinal int
 	Value   driver.Value
+	encrypt valueEncryptor
 }
 
 func convertOldArgs(args []driver.Value) []namedValue {
@@ -1124,7 +1144,7 @@ func (s *Stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 	}
 	list := make([]namedValue, len(args))
 	for i, nv := range args {
-		list[i] = namedValue(nv)
+		list[i] = namedValueFromDriverNamedValue(nv)
 	}
 	return s.queryContext(ctx, list)
 }
@@ -1137,9 +1157,13 @@ func (s *Stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 	}
 	list := make([]namedValue, len(args))
 	for i, nv := range args {
-		list[i] = namedValue(nv)
+		list[i] = namedValueFromDriverNamedValue(nv)
 	}
 	return s.exec(ctx, list)
+}
+
+func namedValueFromDriverNamedValue(v driver.NamedValue) namedValue {
+	return namedValue{Name: v.Name, Ordinal: v.Ordinal, Value: v.Value, encrypt: nil}
 }
 
 // Rowsq implements the sqlexp messages model for Query and QueryContext
