@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/microsoft/go-mssqldb/aecmk"
-	ae "github.com/swisscom/mssql-always-encrypted/pkg"
+	ae "github.com/microsoft/go-mssqldb/internal/github.com/swisscom/mssql-always-encrypted/pkg"
 	"golang.org/x/text/encoding/unicode"
 	pkcs "software.sslmate.com/src/go-pkcs12"
 )
