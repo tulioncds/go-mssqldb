@@ -1370,5 +1370,5 @@ func (f *featureExtColumnEncryption) toBytes() []byte {
 		with the additional ability to cache column encryption keys that are to be sent to the enclave
 		and the ability to retry queries when the keys sent by the client do not match what is needed for the query to run.
 	*/
-	return []byte{0x02}
+	return []byte{0x01}
 }

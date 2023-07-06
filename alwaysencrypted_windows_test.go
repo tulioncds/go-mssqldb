@@ -76,7 +76,7 @@ const (
 	dropColumnEncryptionKey   = `DROP COLUMN ENCRYPTION KEY [%s]`
 	createEncryptedTable      = `CREATE TABLE mssqlAlwaysEncrypted 
 	    (col1 int 
-			ENCRYPTED WITH (ENCRYPTION_TYPE = RANDOMIZED,
+			ENCRYPTED WITH (ENCRYPTION_TYPE = DETERMINISTIC,
 							ALGORITHM = 'AEAD_AES_256_CBC_HMAC_SHA_256',
 							COLUMN_ENCRYPTION_KEY = [%s]),
 		col2 nchar(10) COLLATE Latin1_General_BIN2
