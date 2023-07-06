@@ -2,6 +2,7 @@ package algorithms
 
 import (
 	"bytes"
+	"crypto/rand"
 	"fmt"
 
 	"github.com/microsoft/go-mssqldb/internal/github.com/swisscom/mssql-always-encrypted/pkg/crypto"
@@ -48,8 +49,29 @@ func NewAeadAes256CbcHmac256Algorithm(key keys.AeadAes256CbcHmac256, encType enc
 	return a
 }
 
-func (a *AeadAes256CbcHmac256Algorithm) Encrypt(bytes []byte) ([]byte, error) {
-	panic("implement me")
+func (a *AeadAes256CbcHmac256Algorithm) Encrypt(cleartext []byte) ([]byte, error) {
+	buf := make([]byte, 0)
+	var iv []byte
+	if a.deterministic {
+		iv = crypto.Sha256Hmac(cleartext, a.cek.IvKey())
+		if len(iv) > a.blockSizeBytes {
+			iv = iv[:a.blockSizeBytes]
+		}
+	} else {
+		iv = make([]byte, a.blockSizeBytes)
+		_, err := rand.Read(iv)
+		if err != nil {
+			panic(err)
+		}
+	}
+	buf = append(buf, a.algorithmVersion)
+	authTag := a.prepareAuthTag(iv, cleartext)
+	buf = append(buf, authTag...)
+	buf = append(buf, iv...)
+	aescdbc := crypto.NewAESCbcPKCS5(a.cek.EncryptionKey(), iv)
+	ciphertext := aescdbc.Encrypt(cleartext)
+	buf = append(buf, ciphertext...)
+	return buf, nil
 }
 
 func (a *AeadAes256CbcHmac256Algorithm) Decrypt(ciphertext []byte) ([]byte, error) {

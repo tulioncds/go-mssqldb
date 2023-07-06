@@ -80,7 +80,7 @@ func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArg
 	}
 	paramMap := make(map[string]paramMapEntry)
 	for _, p := range paramsInfo {
-		paramMap[p.name] = paramMapEntry{cekInfo[p.cekOrdinal-1], &p}
+		paramMap[p.name] = paramMapEntry{cekInfo[p.cekOrdinal-1], p}
 	}
 	encryptedArgs = make([]namedValue, len(args))
 	for i, a := range args {
@@ -225,7 +225,7 @@ func appendPrefixedParameterName(b *strings.Builder, p string) {
 	}
 }
 
-func processDescribeParameterEncryption(rows driver.Rows) (cekInfo []*cekData, paramInfo []parameterEncData, err error) {
+func processDescribeParameterEncryption(rows driver.Rows) (cekInfo []*cekData, paramInfo []*parameterEncData, err error) {
 	cekInfo = make([]*cekData, 0)
 	values := make([]driver.Value, 9)
 	qerr := rows.Next(values)
@@ -255,10 +255,10 @@ func processDescribeParameterEncryption(rows driver.Rows) (cekInfo []*cekData, p
 	if err != nil {
 		return
 	}
-	paramInfo = make([]parameterEncData, 0)
+	paramInfo = make([]*parameterEncData, 0)
 	qerr = rows.Next(values[:6])
 	for qerr == nil {
-		paramInfo = append(paramInfo, parameterEncData{ordinal: int(values[0].(int64)),
+		paramInfo = append(paramInfo, &parameterEncData{ordinal: int(values[0].(int64)),
 			name:        values[1].(string),
 			algorithm:   int(values[2].(int64)),
 			encType:     ColumnEncryptionType(values[3].(int64)),

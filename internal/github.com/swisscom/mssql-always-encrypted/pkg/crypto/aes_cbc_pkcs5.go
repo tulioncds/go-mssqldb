@@ -10,9 +10,9 @@ import (
 // Inspired by: https://gist.github.com/hothero/7d085573f5cb7cdb5801d7adcf66dcf3
 
 type AESCbcPKCS5 struct {
-	key    []byte
-	iv     []byte
-	block  cipher.Block
+	key   []byte
+	iv    []byte
+	block cipher.Block
 }
 
 func NewAESCbcPKCS5(key []byte, iv []byte) AESCbcPKCS5 {
@@ -25,15 +25,16 @@ func NewAESCbcPKCS5(key []byte, iv []byte) AESCbcPKCS5 {
 	return a
 }
 
-func (a AESCbcPKCS5) Encrypt(cleartext []byte) {
+func (a AESCbcPKCS5) Encrypt(cleartext []byte) (cipherText []byte) {
 	if a.block == nil {
 		a.initCipher()
 	}
 
 	blockMode := cipher.NewCBCEncrypter(a.block, a.iv)
 	paddedCleartext := PKCS5Padding(cleartext, blockMode.BlockSize())
-	var cipherText = make([]byte, 0)
+	cipherText = make([]byte, len(paddedCleartext))
 	blockMode.CryptBlocks(cipherText, paddedCleartext)
+	return
 }
 
 func (a AESCbcPKCS5) Decrypt(ciphertext []byte) []byte {

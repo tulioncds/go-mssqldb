@@ -667,7 +667,7 @@ func (s *Stmt) makeRPCParams(args []namedValue, isProc bool) ([]param, []string,
 			}
 			params[i+offset].cipherInfo = metadata
 			params[i+offset].ti.TypeId = typeBigVarBin
-			params[i+offset].ti.Buffer = encryptedBytes
+			params[i+offset].buffer = encryptedBytes
 			params[i+offset].ti.Size = 0
 		}
 		decls[i] = fmt.Sprintf("%s %s%s", name, makeDecl(params[i+offset].ti), output)

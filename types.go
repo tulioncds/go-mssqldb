@@ -440,7 +440,7 @@ func readByteLenType(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata) interface{} 
 	default:
 		badStreamPanicf("Invalid typeid")
 	}
-	panic("shoulnd't get here")
+	panic("shouldn't get here")
 }
 
 func writeByteLenType(w io.Writer, ti typeInfo, buf []byte) (err error) {

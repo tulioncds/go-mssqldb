@@ -86,7 +86,6 @@ func sendRpc(buf *tdsBuffer, headers []headerStruct, proc procId, flags uint16, 
 			if err != nil {
 				return
 			}
-			param.tiOriginal.Writer(buf, param.tiOriginal, param.buffer)
 			if _, err = buf.Write(param.cipherInfo); err != nil {
 				return
 			}
