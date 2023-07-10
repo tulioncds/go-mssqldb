@@ -69,6 +69,7 @@ func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArg
 		return
 	}
 	cekInfo, paramsInfo, err := processDescribeParameterEncryption(rows)
+	rows.Close()
 	if err != nil {
 		return
 	}
@@ -109,13 +110,12 @@ func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArg
 // [ @params = ] N'parameters'
 // [ ;]
 func (s *Stmt) prepareEncryptionQuery(isProc bool, q string, args []namedValue) (newArgs []namedValue, err error) {
-	if isProc {
-		newArgs = make([]namedValue, 1)
-		newArgs[0] = namedValue{Name: "tsql", Ordinal: 0, Value: buildStoredProcedureStatementForColumnEncryption(q, args)}
-		return
-	}
 	newArgs = make([]namedValue, 2)
-	newArgs[0] = namedValue{Name: "tsql", Ordinal: 0, Value: q}
+	if isProc {
+		newArgs[0] = namedValue{Name: "tsql", Ordinal: 0, Value: buildStoredProcedureStatementForColumnEncryption(q, args)}
+	} else {
+		newArgs[0] = namedValue{Name: "tsql", Ordinal: 0, Value: q}
+	}
 	params, err := s.buildParametersForColumnEncryption(args)
 	if err != nil {
 		return
