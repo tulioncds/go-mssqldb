@@ -1032,7 +1032,7 @@ func processSingleResponse(ctx context.Context, sess *tdsSession, ch chan tokenS
 			ch <- done
 			if done.Status&doneCount != 0 {
 				if sess.logFlags&logRows != 0 {
-					sess.logger.Log(ctx, msdsn.LogRows, fmt.Sprintf("(%d row(s) affected)", done.RowCount))
+					sess.logger.Log(ctx, msdsn.LogRows, fmt.Sprintf("(Rows affected: %d)", done.RowCount))
 				}
 
 				if (colsReceived || done.CurCmd != cmdSelect) && outs.msgq != nil {

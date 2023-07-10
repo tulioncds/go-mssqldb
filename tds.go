@@ -1159,9 +1159,8 @@ initiate_connection:
 		buf:        outbuf,
 		logger:     logger,
 		logFlags:   uint64(p.LogFlags),
-		aeSettings: &alwaysEncryptedSettings{keyProviders: make(aecmk.ColumnEncryptionKeyProviderMap)},
+		aeSettings: &alwaysEncryptedSettings{keyProviders: aecmk.GetGlobalCekProviders()},
 	}
-	sess.aeSettings.keyProviders = aecmk.GetGlobalCekProviders()
 
 	for i, p := range c.keyProviders {
 		sess.aeSettings.keyProviders[i] = p
