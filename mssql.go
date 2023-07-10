@@ -654,6 +654,7 @@ func (s *Stmt) makeRPCParams(args []namedValue, isProc bool) ([]param, []string,
 		if isOutputValue(val.Value) {
 			output = outputSuffix
 		}
+		tiDecl := params[i+offset].ti
 		if val.encrypt != nil {
 			// Encrypted parameters have a few requirements:
 			// 1. Copy original typeinfo to a block after the data
@@ -670,7 +671,8 @@ func (s *Stmt) makeRPCParams(args []namedValue, isProc bool) ([]param, []string,
 			params[i+offset].buffer = encryptedBytes
 			params[i+offset].ti.Size = 0
 		}
-		decls[i] = fmt.Sprintf("%s %s%s", name, makeDecl(params[i+offset].ti), output)
+
+		decls[i] = fmt.Sprintf("%s %s%s", name, makeDecl(tiDecl), output)
 
 	}
 	return params, decls, nil

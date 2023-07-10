@@ -30,24 +30,27 @@ func TestAlwaysEncryptedE2E(t *testing.T) {
 	defer conn.Exec(fmt.Sprintf(dropColumnMasterKey, certPath))
 	r, _ := rand.Int(rand.Reader, big.NewInt(1000))
 	cekName := fmt.Sprintf("mssqlCek%d", r.Int64())
-	encryptedCek := localcert.WindowsCertificateStoreKeyProvider.EncryptColumnEncryptionKey(certPath, KeyEncryptionAlgorithm, []byte(certPath))
+	tableName := fmt.Sprintf("mssqlAe%d", r.Int64())
+	keyBytes := make([]byte, 32)
+	_, _ = rand.Read(keyBytes)
+	encryptedCek := localcert.WindowsCertificateStoreKeyProvider.EncryptColumnEncryptionKey(certPath, KeyEncryptionAlgorithm, keyBytes)
 	createCek := fmt.Sprintf(createColumnEncryptionKey, cekName, certPath, encryptedCek)
 	_, err = conn.Exec(createCek)
 	if err != nil {
 		t.Fatalf("Unable to create CEK: %s", err.Error())
 	}
 	defer conn.Exec(fmt.Sprintf(dropColumnEncryptionKey, cekName))
-	_, _ = conn.Exec("DROP TABLE IF EXISTS mssqlAlwaysEncrypted")
-	_, err = conn.Exec(fmt.Sprintf(createEncryptedTable, cekName, cekName))
+	_, _ = conn.Exec("DROP TABLE IF EXISTS " + tableName)
+	_, err = conn.Exec(fmt.Sprintf(createEncryptedTable, tableName, cekName, cekName))
 	if err != nil {
 		t.Fatalf("Failed to create encrypted table %s", err.Error())
 	}
-	defer conn.Exec("DROP TABLE IF EXISTS mssqlAlwaysEncrypted")
-	_, err = conn.Exec("INSERT INTO mssqlAlwaysEncrypted VALUES (@p1, @p2)", int32(1), NChar("mycol2"))
+	defer conn.Exec("DROP TABLE IF EXISTS " + tableName)
+	_, err = conn.Exec("INSERT INTO "+tableName+" VALUES (@p1, @p2)", int32(1), NChar("mycol2"))
 	if err != nil {
-		t.Fatalf("Failed to insert row in encrypted table %s", err.Error())
+		t.Logf("Failed to insert row in encrypted table %s", err.Error())
 	}
-	rows, err := conn.Query("select top (1) col1, col2 from mssqlAlwaysEncrypted")
+	rows, err := conn.Query("select top (1) col1, col2 from " + tableName)
 	if err != nil {
 		t.Fatalf("Unable to query encrypted columns: %v", err.(Error).All)
 	}
@@ -55,12 +58,16 @@ func TestAlwaysEncryptedE2E(t *testing.T) {
 		rows.Close()
 		t.Fatalf("rows.Next returned false")
 	}
-	var col1 string
-	var col2 int32
+	var col1 int32
+	var col2 string
 	err = rows.Scan(&col1, &col2)
 	if err != nil {
 		rows.Close()
 		t.Fatalf("rows.Scan failed: %s", err.Error())
+	}
+	if col1 != 1 || col2 != "mycol2" {
+		rows.Close()
+		t.Fatalf("Got incorrect scan values %d and %s", col1, col2)
 	}
 	rows.Close()
 	err = rows.Err()
@@ -74,7 +81,7 @@ const (
 	dropColumnMasterKey       = `DROP COLUMN MASTER KEY [%s]`
 	createColumnEncryptionKey = `CREATE COLUMN ENCRYPTION KEY [%s] WITH VALUES (COLUMN_MASTER_KEY = [%s], ALGORITHM = 'RSA_OAEP', ENCRYPTED_VALUE = 0x%x )`
 	dropColumnEncryptionKey   = `DROP COLUMN ENCRYPTION KEY [%s]`
-	createEncryptedTable      = `CREATE TABLE mssqlAlwaysEncrypted 
+	createEncryptedTable      = `CREATE TABLE %s 
 	    (col1 int 
 			ENCRYPTED WITH (ENCRYPTION_TYPE = DETERMINISTIC,
 							ALGORITHM = 'AEAD_AES_256_CBC_HMAC_SHA_256',

@@ -65,11 +65,11 @@ func (a *AeadAes256CbcHmac256Algorithm) Encrypt(cleartext []byte) ([]byte, error
 		}
 	}
 	buf = append(buf, a.algorithmVersion)
-	authTag := a.prepareAuthTag(iv, cleartext)
-	buf = append(buf, authTag...)
-	buf = append(buf, iv...)
 	aescdbc := crypto.NewAESCbcPKCS5(a.cek.EncryptionKey(), iv)
 	ciphertext := aescdbc.Encrypt(cleartext)
+	authTag := a.prepareAuthTag(iv, ciphertext)
+	buf = append(buf, authTag...)
+	buf = append(buf, iv...)
 	buf = append(buf, ciphertext...)
 	return buf, nil
 }

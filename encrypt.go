@@ -11,7 +11,6 @@ import (
 	"github.com/microsoft/go-mssqldb/internal/github.com/swisscom/mssql-always-encrypted/pkg/algorithms"
 	"github.com/microsoft/go-mssqldb/internal/github.com/swisscom/mssql-always-encrypted/pkg/encryption"
 	"github.com/microsoft/go-mssqldb/internal/github.com/swisscom/mssql-always-encrypted/pkg/keys"
-	"github.com/microsoft/go-mssqldb/msdsn"
 )
 
 type ColumnEncryptionType int
@@ -73,7 +72,9 @@ func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArg
 	if err != nil {
 		return
 	}
-	s.c.sess.logger.Log(ctx, msdsn.LogDebug, fmt.Sprintf("cekInfo: %v\nparamsInfo:%v\n", cekInfo, paramsInfo))
+	if len(cekInfo) == 0 {
+		return args, nil
+	}
 	err = s.decryptCek(cekInfo)
 	if err != nil {
 		return
@@ -161,7 +162,7 @@ func getEncryptor(info paramMapEntry) valueEncryptor {
 	// 		CekVersion (ulong)
 	// 		CekMDVersion (ulonglong) - really a byte array
 	// 		NormVersion (byte)
-	//              algo+ enctype+ dbid+ keyid+ keyver= normversion
+	//              algo+ enctype+ dbid+ keyid+ keyver+ normversion
 	metadataLen := 1 + 1 + 4 + 4 + 4 + 1
 	metadataLen += len(info.cek.metadataVersion)
 	metadata := make([]byte, metadataLen)
@@ -245,9 +246,8 @@ func processDescribeParameterEncryption(rows driver.Rows) (cekInfo []*cekData, p
 	if len(cekInfo) == 0 || qerr != io.EOF {
 		if qerr != io.EOF {
 			err = qerr
-		} else {
-			err = fmt.Errorf("No column encryption key rows were returned from sp_describe_parameter_encryption")
 		}
+		// No encryption needed
 		return
 	}
 	r := rows.(driver.RowsNextResultSet)
