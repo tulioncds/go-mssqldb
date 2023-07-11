@@ -3,10 +3,11 @@ package certs
 import (
 	"bytes"
 	"fmt"
+	"math/big"
 	"os/exec"
 	"strings"
 
-	"github.com/Microsoft/go-winio/pkg/guid"
+	"crypto/rand"
 )
 
 // TODO: Create a Linux equivalent.
@@ -16,11 +17,8 @@ const (
 )
 
 func ProvisionMasterKeyInCertStore() (thumbprint string, err error) {
-	var g guid.GUID
-	if g, err = guid.NewV4(); err != nil {
-		return
-	}
-	subject := fmt.Sprintf(`gomssqltest-%s`, g.String())
+	x, _ := rand.Int(rand.Reader, big.NewInt(50000))
+	subject := fmt.Sprintf(`gomssqltest-%d`, x)
 
 	cmd := exec.Command(`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, `/ExecutionPolicy`, `Unrestricted`, fmt.Sprintf(createUserCertScript, subject))
 	buf := &memoryBuffer{buf: new(bytes.Buffer)}

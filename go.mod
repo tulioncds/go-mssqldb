@@ -5,7 +5,6 @@ go 1.13
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.6.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.3.0
-	github.com/Microsoft/go-winio v0.6.1
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9
 	github.com/golang-sql/sqlexp v0.1.0
 	github.com/jcmturner/gokrb5/v8 v8.4.4
