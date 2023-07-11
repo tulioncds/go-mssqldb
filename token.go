@@ -919,7 +919,7 @@ func parseReturnValue(r *tdsBuffer, s *tdsSession) (nv namedValue) {
 	ti := getBaseTypeInfo(r, true) // UserType + Flags + TypeInfo
 
 	var cryptoMetadata *cryptoMetadata = nil
-	if s.alwaysEncrypted {
+	if s.alwaysEncrypted && (ti.Flags&fEncrypted) == fEncrypted {
 		cm := parseCryptoMetadata(r, nil) // CryptoMetadata
 		cryptoMetadata = &cm
 	}

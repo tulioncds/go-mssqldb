@@ -59,6 +59,9 @@ func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArg
 		query:          "sp_describe_parameter_encryption",
 		skipEncryption: true,
 	}
+	oldouts := s.c.outs
+	s.c.clearOuts()
+
 	newArgs, err := s.prepareEncryptionQuery(isProc(s.query), s.query, args)
 	if err != nil {
 		return
@@ -66,10 +69,12 @@ func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArg
 	// TODO: Consider not using recursion
 	rows, err := q.queryContext(ctx, newArgs)
 	if err != nil {
+		s.c.outs = oldouts
 		return
 	}
 	cekInfo, paramsInfo, err := processDescribeParameterEncryption(rows)
 	rows.Close()
+	s.c.outs = oldouts
 	if err != nil {
 		return
 	}
@@ -95,7 +100,7 @@ func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArg
 		}
 		info := paramMap[name]
 
-		if info.p.encType == ColumnEncryptionPlainText {
+		if info.p.encType == ColumnEncryptionPlainText || a.Value == nil {
 			continue
 		}
 
