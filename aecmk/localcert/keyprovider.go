@@ -7,7 +7,6 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/binary"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -149,15 +148,17 @@ func (p *LocalCertProvider) EncryptColumnEncryptionKey(masterKeyPath string, enc
 	if err != nil {
 		panic(fmt.Errorf("Unable to serialize key path %w", err))
 	}
+	k := uint16(len(keyPathBytes))
 	// keyPathLength
-	buf = binary.LittleEndian.AppendUint16(buf, uint16(len(keyPathBytes)))
+	buf = append(buf, byte(k), byte(k>>8))
 
 	cipherText, err := rsa.EncryptOAEP(sha1.New(), rand.Reader, publicKey, cek, []byte{})
 	if err != nil {
 		panic(fmt.Errorf("Unable to encrypt data %w", err))
 	}
+	l := uint16(len(cipherText))
 	// ciphertextLength
-	buf = binary.LittleEndian.AppendUint16(buf, uint16(len(cipherText)))
+	buf = append(buf, byte(l), byte(l>>8))
 	// keypath
 	buf = append(buf, keyPathBytes...)
 	// ciphertext

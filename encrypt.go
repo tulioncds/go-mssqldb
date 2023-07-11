@@ -61,12 +61,11 @@ func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArg
 	}
 	oldouts := s.c.outs
 	s.c.clearOuts()
-
 	newArgs, err := s.prepareEncryptionQuery(isProc(s.query), s.query, args)
 	if err != nil {
 		return
 	}
-	// TODO: Consider not using recursion
+	// TODO: Consider not using recursion.
 	rows, err := q.queryContext(ctx, newArgs)
 	if err != nil {
 		s.c.outs = oldouts
@@ -212,9 +211,15 @@ func buildStoredProcedureStatementForColumnEncryption(sproc string, args []named
 		}
 		first = false
 		b.WriteRune(' ')
-		appendPrefixedParameterName(b, a.Name)
-		b.WriteRune('=')
-		appendPrefixedParameterName(b, a.Name)
+		name := a.Name
+		if len(name) == 0 {
+			name = fmt.Sprintf("@p%d", a.Ordinal)
+		}
+		appendPrefixedParameterName(b, name)
+		if len(a.Name) > 0 {
+			b.WriteRune('=')
+			appendPrefixedParameterName(b, a.Name)
+		}
 		if isOutputValue(a.Value) {
 			b.WriteString(" OUTPUT")
 		}
