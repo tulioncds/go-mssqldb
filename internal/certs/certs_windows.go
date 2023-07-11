@@ -1,10 +1,8 @@
 package certs
 
 import (
-	"bytes"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -124,23 +122,20 @@ func nCryptExportKey(kh windows.Handle, blobType string) ([]byte, error) {
 	return buf, nil
 }
 
-// TODO: See if we can rewrite this to avoid copying the data from buf twice per field
+type RSA_HEADER struct {
+	Magic         uint32
+	BitLength     uint32
+	PublicExpSize uint32
+	ModulusSize   uint32
+	Prime1Size    uint32
+	Prime2Size    uint32
+}
+
 func unmarshalRSA(buf []byte) (*rsa.PrivateKey, error) {
 	// BCRYPT_RSA_BLOB -- https://learn.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob
-	header := struct {
-		Magic         uint32
-		BitLength     uint32
-		PublicExpSize uint32
-		ModulusSize   uint32
-		Prime1Size    uint32
-		Prime2Size    uint32
-	}{}
-
-	r := bytes.NewReader(buf)
-	if err := binary.Read(r, binary.LittleEndian, &header); err != nil {
-		return nil, err
-	}
-
+	cbHeader := uint32(unsafe.Sizeof(RSA_HEADER{}))
+	header := (*(*RSA_HEADER)(unsafe.Pointer(&buf[0])))
+	buf = buf[cbHeader:]
 	if header.Magic != 0x33415352 { // "RSA3" BCRYPT_RSAFULLPRIVATE_MAGIC
 		return nil, fmt.Errorf("invalid header magic %x", header.Magic)
 	}
@@ -149,54 +144,30 @@ func unmarshalRSA(buf []byte) (*rsa.PrivateKey, error) {
 		return nil, fmt.Errorf("unsupported public exponent size (%d bits)", header.PublicExpSize*8)
 	}
 
-	// the exponent is in BigEndian format, so read the data into the right place in the buffer
-	exp := make([]byte, 8)
-	n, err := r.Read(exp[8-header.PublicExpSize:])
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to read public exponent %w", err)
+	consumeBigInt := func(size uint32) *big.Int {
+		b := buf[:size]
+		buf = buf[size:]
+		return new(big.Int).SetBytes(b)
 	}
-
-	if n != int(header.PublicExpSize) {
-		return nil, fmt.Errorf("failed to read correct public exponent size, read %d expected %d", n, int(header.PublicExpSize))
-	}
-
-	mod := make([]byte, header.ModulusSize)
-	n, err = r.Read(mod)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to read modulus %w", err)
-	}
-
-	if n != int(header.ModulusSize) {
-		return nil, fmt.Errorf("failed to read correct modulus size, read %d expected %d", n, int(header.ModulusSize))
-	}
+	E := consumeBigInt(header.PublicExpSize)
+	N := consumeBigInt(header.ModulusSize)
+	P := consumeBigInt(header.Prime1Size)
+	Q := consumeBigInt(header.Prime2Size)
+	Dp := consumeBigInt(header.Prime1Size)
+	Dq := consumeBigInt(header.Prime2Size)
+	Qinv := consumeBigInt(header.Prime1Size)
+	D := consumeBigInt(header.ModulusSize)
 
 	pk := &rsa.PrivateKey{
 		PublicKey: rsa.PublicKey{
-			N: new(big.Int).SetBytes(mod),
-			E: int(binary.BigEndian.Uint64(exp)),
+			N: N,
+			E: int(E.Int64()),
 		},
-		D:      new(big.Int),
-		Primes: make([]*big.Int, 2),
+		D:      D,
+		Primes: []*big.Int{P, Q},
+		Precomputed: rsa.PrecomputedValues{Dp: Dp,
+			Dq: Dq, Qinv: Qinv,
+		},
 	}
-	prime := make([]byte, header.Prime1Size)
-	n, err = r.Read(prime)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read prime1 %w", err)
-	}
-	pk.Primes[0] = new(big.Int).SetBytes(prime)
-	prime = make([]byte, header.Prime2Size)
-	n, err = r.Read(prime)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read prime2 %w", err)
-	}
-	pk.Primes[1] = new(big.Int).SetBytes(prime)
-	expBytes := make([]byte, 2*header.Prime1Size+header.Prime2Size+header.ModulusSize)
-	n, err = r.Read(expBytes)
-	if err != nil {
-		return nil, fmt.Errorf("Unable to read PrivateExponent %w", err)
-	}
-	pk.D = new(big.Int).SetBytes(expBytes[2*header.Prime1Size+header.Prime2Size:])
 	return pk, nil
 }
