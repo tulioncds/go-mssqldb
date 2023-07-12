@@ -910,7 +910,7 @@ func (rc *Rows) NextResultSet() error {
 // the value type that can be used to scan types into. For example, the database
 // column type "bigint" this should return "reflect.TypeOf(int64(0))".
 func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
-	return makeGoLangScanType(r.cols[index].ti)
+	return makeGoLangScanType(r.cols[index].originalTypeInfo())
 }
 
 // RowsColumnTypeDatabaseTypeName may be implemented by Rows. It should return the
@@ -919,7 +919,7 @@ func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 // "DECIMAL", "SMALLINT", "INT", "BIGINT", "BOOL", "[]BIGINT", "JSONB", "XML",
 // "TIMESTAMP".
 func (r *Rows) ColumnTypeDatabaseTypeName(index int) string {
-	return makeGoLangTypeName(r.cols[index].ti)
+	return makeGoLangTypeName(r.cols[index].originalTypeInfo())
 }
 
 // RowsColumnTypeLength may be implemented by Rows. It should return the length
@@ -935,7 +935,7 @@ func (r *Rows) ColumnTypeDatabaseTypeName(index int) string {
 //	int           (0, false)
 //	bytea(30)     (30, true)
 func (r *Rows) ColumnTypeLength(index int) (int64, bool) {
-	return makeGoLangTypeLength(r.cols[index].ti)
+	return makeGoLangTypeLength(r.cols[index].originalTypeInfo())
 }
 
 // It should return
@@ -946,7 +946,7 @@ func (r *Rows) ColumnTypeLength(index int) (int64, bool) {
 //	int               (0, 0, false)
 //	decimal           (math.MaxInt64, math.MaxInt64, true)
 func (r *Rows) ColumnTypePrecisionScale(index int) (int64, int64, bool) {
-	return makeGoLangTypePrecisionScale(r.cols[index].ti)
+	return makeGoLangTypePrecisionScale(r.cols[index].originalTypeInfo())
 }
 
 // The nullable value should
@@ -1358,7 +1358,7 @@ scan:
 // the value type that can be used to scan types into. For example, the database
 // column type "bigint" this should return "reflect.TypeOf(int64(0))".
 func (r *Rowsq) ColumnTypeScanType(index int) reflect.Type {
-	return makeGoLangScanType(r.cols[index].ti)
+	return makeGoLangScanType(r.cols[index].originalTypeInfo())
 }
 
 // RowsColumnTypeDatabaseTypeName may be implemented by Rows. It should return the
@@ -1367,7 +1367,7 @@ func (r *Rowsq) ColumnTypeScanType(index int) reflect.Type {
 // "DECIMAL", "SMALLINT", "INT", "BIGINT", "BOOL", "[]BIGINT", "JSONB", "XML",
 // "TIMESTAMP".
 func (r *Rowsq) ColumnTypeDatabaseTypeName(index int) string {
-	return makeGoLangTypeName(r.cols[index].ti)
+	return makeGoLangTypeName(r.cols[index].originalTypeInfo())
 }
 
 // RowsColumnTypeLength may be implemented by Rows. It should return the length
@@ -1383,7 +1383,7 @@ func (r *Rowsq) ColumnTypeDatabaseTypeName(index int) string {
 //	int           (0, false)
 //	bytea(30)     (30, true)
 func (r *Rowsq) ColumnTypeLength(index int) (int64, bool) {
-	return makeGoLangTypeLength(r.cols[index].ti)
+	return makeGoLangTypeLength(r.cols[index].originalTypeInfo())
 }
 
 // It should return
@@ -1394,7 +1394,7 @@ func (r *Rowsq) ColumnTypeLength(index int) (int64, bool) {
 //	int               (0, 0, false)
 //	decimal           (math.MaxInt64, math.MaxInt64, true)
 func (r *Rowsq) ColumnTypePrecisionScale(index int) (int64, int64, bool) {
-	return makeGoLangTypePrecisionScale(r.cols[index].ti)
+	return makeGoLangTypePrecisionScale(r.cols[index].originalTypeInfo())
 }
 
 // The nullable value should

@@ -671,40 +671,46 @@ func readVariantType(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata) interface{} 
 // partially length prefixed stream
 // http://msdn.microsoft.com/en-us/library/dd340469.aspx
 func readPLPType(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata) interface{} {
-	size := r.uint64()
-	var buf *bytes.Buffer
-	switch size {
-	case _PLP_NULL:
-		// null
-		return nil
-	case _UNKNOWN_PLP_LEN:
-		// size unknown
-		buf = bytes.NewBuffer(make([]byte, 0, 1000))
-	default:
-		buf = bytes.NewBuffer(make([]byte, 0, size))
-	}
-	for {
-		chunksize := r.uint32()
-		if chunksize == 0 {
-			break
+	var bytesToDecode []byte
+	if c == nil {
+		size := r.uint64()
+		var buf *bytes.Buffer
+		switch size {
+		case _PLP_NULL:
+			// null
+			return nil
+		case _UNKNOWN_PLP_LEN:
+			// size unknown
+			buf = bytes.NewBuffer(make([]byte, 0, 1000))
+		default:
+			buf = bytes.NewBuffer(make([]byte, 0, size))
 		}
-		if _, err := io.CopyN(buf, r, int64(chunksize)); err != nil {
-			badStreamPanicf("Reading PLP type failed: %s", err.Error())
+		for {
+			chunksize := r.uint32()
+			if chunksize == 0 {
+				break
+			}
+			if _, err := io.CopyN(buf, r, int64(chunksize)); err != nil {
+				badStreamPanicf("Reading PLP type failed: %s", err.Error())
+			}
 		}
+		bytesToDecode = buf.Bytes()
+	} else {
+		bytesToDecode = r.rbuf
 	}
 	switch ti.TypeId {
 	case typeXml:
-		return decodeXml(*ti, buf.Bytes())
+		return decodeXml(*ti, bytesToDecode)
 	case typeBigVarChar, typeBigChar, typeText:
-		return decodeChar(ti.Collation, buf.Bytes())
+		return decodeChar(ti.Collation, bytesToDecode)
 	case typeBigVarBin, typeBigBinary, typeImage:
-		return buf.Bytes()
+		return bytesToDecode
 	case typeNVarChar, typeNChar, typeNText:
-		return decodeNChar(buf.Bytes())
+		return decodeNChar(bytesToDecode)
 	case typeUdt:
-		return decodeUdt(*ti, buf.Bytes())
+		return decodeUdt(*ti, bytesToDecode)
 	}
-	panic("shoulnd't get here")
+	panic("shouldn't get here")
 }
 
 func writePLPType(w io.Writer, ti typeInfo, buf []byte) (err error) {

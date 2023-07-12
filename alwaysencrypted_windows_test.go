@@ -58,6 +58,13 @@ func TestAlwaysEncryptedE2E(t *testing.T) {
 		rows.Close()
 		t.Fatalf("rows.Next returned false")
 	}
+	cols, err := rows.ColumnTypes()
+	if err != nil {
+		t.Fatalf("rows.ColumnTypes failed %s", err.Error())
+	}
+	if cols[0].DatabaseTypeName() != "INT" {
+		t.Fatalf("Got wrong type name for intcol %s", cols[0].DatabaseTypeName())
+	}
 	var col1 int32
 	var col2 string
 	err = rows.Scan(&col1, &col2)

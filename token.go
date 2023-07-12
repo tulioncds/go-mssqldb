@@ -821,7 +821,9 @@ func (R RWCBuffer) Close() error {
 func decryptColumn(column columnStruct, s *tdsSession, columnContent interface{}) tdsBuffer {
 	encType := encryption.From(column.cryptoMeta.encType)
 	cekValue := column.cryptoMeta.entry.cekValues[column.cryptoMeta.ordinal]
-	s.logger.Log(context.Background(), msdsn.LogMessages, fmt.Sprintf("Decrypting column %s. Key path: %s, Key store:%s, Algo: %s", column.ColName, cekValue.keyPath, cekValue.keyStoreName, cekValue.algorithmName))
+	if (s.logFlags & uint64(msdsn.LogDebug)) == uint64(msdsn.LogDebug) {
+		s.logger.Log(context.Background(), msdsn.LogDebug, fmt.Sprintf("Decrypting column %s. Key path: %s, Key store:%s, Algo: %s", column.ColName, cekValue.keyPath, cekValue.keyStoreName, cekValue.algorithmName))
+	}
 
 	cekProvider, ok := s.aeSettings.keyProviders[cekValue.keyStoreName]
 	if !ok {
@@ -838,6 +840,10 @@ func decryptColumn(column columnStruct, s *tdsSession, columnContent interface{}
 		panic(err)
 	}
 
+	// Decrypt returns a minimum of 8 bytes so truncate to the actual data size
+	if column.cryptoMeta.typeInfo.Size > 0 && column.cryptoMeta.typeInfo.Size < len(d) {
+		d = d[:column.cryptoMeta.typeInfo.Size]
+	}
 	var newBuff []byte
 	newBuff = append(newBuff, d...)
 
@@ -935,6 +941,17 @@ func processSingleResponse(ctx context.Context, sess *tdsSession, ch chan tokenS
 		if err := recover(); err != nil {
 			if sess.logFlags&logErrors != 0 {
 				sess.logger.Log(ctx, msdsn.LogErrors, fmt.Sprintf("Intercepted panic %v", err))
+			}
+			if outs.msgq != nil {
+				var derr error
+				switch e := err.(type) {
+				case error:
+					derr = e
+				default:
+					derr = fmt.Errorf("Unhandled session error %v", e)
+				}
+				_ = sqlexp.ReturnMessageEnqueue(ctx, outs.msgq, sqlexp.MsgError{Error: derr})
+
 			}
 			ch <- err
 		}

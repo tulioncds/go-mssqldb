@@ -201,6 +201,13 @@ func isEncryptedFlag(flags uint16) bool {
 	return colFlagEncrypted == (flags & colFlagEncrypted)
 }
 
+func (c columnStruct) originalTypeInfo() typeInfo {
+	if c.isEncrypted() {
+		return c.cryptoMeta.typeInfo
+	}
+	return c.ti
+}
+
 type keySlice []uint8
 
 func (p keySlice) Len() int           { return len(p) }
