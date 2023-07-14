@@ -51,6 +51,8 @@ func convertInputParameter(val interface{}) (interface{}, error) {
 	switch v := val.(type) {
 	case int, int16, int32, int64, int8:
 		return val, nil
+	case byte:
+		return val, nil
 	case VarChar:
 		return val, nil
 	case NVarCharMax:
@@ -69,8 +71,10 @@ func convertInputParameter(val interface{}) (interface{}, error) {
 		return val, nil
 	case civil.Time:
 		return val, nil
-		// case *apd.Decimal:
-		// 	return nil
+	// case *apd.Decimal:
+	// 	return nil
+	case float32:
+		return val, nil
 	default:
 		return driver.DefaultParameterConverter.ConvertValue(v)
 	}

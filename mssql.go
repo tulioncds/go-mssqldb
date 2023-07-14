@@ -1012,12 +1012,20 @@ func (s *Stmt) makeParam(val driver.Value) (res param, err error) {
 		res.ti.TypeId = typeIntN
 		res.ti.Size = 8
 		res.buffer = []byte{}
-
+	case byte:
+		res.ti.TypeId = typeIntN
+		res.buffer = []byte{val}
+		res.ti.Size = 1
 	case float64:
 		res.ti.TypeId = typeFltN
 		res.ti.Size = 8
 		res.buffer = make([]byte, 8)
 		binary.LittleEndian.PutUint64(res.buffer, math.Float64bits(val))
+	case float32:
+		res.ti.TypeId = typeFltN
+		res.ti.Size = 4
+		res.buffer = make([]byte, 4)
+		binary.LittleEndian.PutUint32(res.buffer, math.Float32bits(val))
 	case sql.NullFloat64:
 		// only null values should be getting here
 		res.ti.TypeId = typeFltN

@@ -86,7 +86,11 @@ func (s *Stmt) encryptArgs(ctx context.Context, args []namedValue) (encryptedArg
 	}
 	paramMap := make(map[string]paramMapEntry)
 	for _, p := range paramsInfo {
-		paramMap[p.name] = paramMapEntry{cekInfo[p.cekOrdinal-1], p}
+		if p.encType == ColumnEncryptionPlainText {
+			paramMap[p.name] = paramMapEntry{nil, p}
+		} else {
+			paramMap[p.name] = paramMapEntry{cekInfo[p.cekOrdinal-1], p}
+		}
 	}
 	encryptedArgs = make([]namedValue, len(args))
 	for i, a := range args {
