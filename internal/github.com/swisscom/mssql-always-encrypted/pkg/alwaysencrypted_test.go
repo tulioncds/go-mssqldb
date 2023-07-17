@@ -97,7 +97,7 @@ func TestDecrypt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Printf("column value: \"%02X\"", cleartextUtf8)
+	t.Logf("column value: \"%02X\"", cleartextUtf8)
 	assert.Equal(t, "12345     ", string(cleartextUtf8))
 }
 func TestDecryptCEK(t *testing.T) {
