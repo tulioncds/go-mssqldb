@@ -1,3 +1,6 @@
+//go:build 1.17
+// +build 1.17
+
 package localcert
 
 import (
