@@ -71,6 +71,7 @@ install:
   - go get -u github.com/golang-sql/sqlexp
   - go get -u golang.org/x/crypto/md4
   - go get -u golang.org/x/text/encoding/unicode
+  - go get -u software.sslmate.com/src/go-pkcs12
 
 build_script:
   - go build

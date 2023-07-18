@@ -27,7 +27,7 @@ func TestBuildQueryParametersForCE(t *testing.T) {
 			"Input and Output params",
 			[]namedValue{
 				{Name: "", Ordinal: 0, Value: VarChar("somestring")},
-				{Name: "c1", Value: 5},
+				{Name: "c1", Value: int64(5)},
 				{Name: "pout", Value: sql.Out{Dest: outparam}},
 			},
 			`@p0 varchar(10), @c1 bigint, @pout nvarchar(max) output`,
