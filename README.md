@@ -4,11 +4,10 @@
 [![Build status](https://ci.appveyor.com/api/projects/status/jrln8cs62wj9i0a2?svg=true)](https://ci.appveyor.com/project/microsoft/go-mssqldb)
 [![codecov](https://codecov.io/gh/microsoft/go-mssqldb/branch/master/graph/badge.svg)](https://codecov.io/gh/microsoft/go-mssqldb)
 
-For more recent updates, see the [Microsoft fork](https://github.com/microsoft/go-mssqldb).
 
 ## Install
 
-Requires Go 1.8 or above.
+Requires Go 1.10 or above.
 
 Install with `go install github.com/microsoft/go-mssqldb@latest`.
 
@@ -72,6 +71,10 @@ Other supported formats are listed below.
 * For a non-URL DSN, the `server` parameter can be set to the full pipe name like `\\host\pipe\sql\query`
 
 If no pipe name can be derived from the DSN, connection attempts will first query the SQL Browser service to find the pipe name for the instance.
+
+### DNS Resolution through a Custom Dialer
+
+Custom Dialers can be used to resolve DNS if the Connection's Dialer implements the `HostDialer` interface. This is helpful when the dialer is proxying requests to a different, private network and the DNS record is local to the private network.
 
 ### Protocol configuration
 
