@@ -326,6 +326,9 @@ func GetConnParams() (*msdsn.Config, error) {
 		if os.Getenv("PIPE") != "" {
 			c.Parameters["pipe"] = os.Getenv("PIPE")
 		}
+		if os.Getenv("COLUMNENCRYPTION") != "" {
+			c.ColumnEncryption = true
+		}
 		return c, nil
 	}
 	// try loading connection string from file

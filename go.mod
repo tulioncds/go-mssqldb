@@ -1,6 +1,6 @@
 module github.com/microsoft/go-mssqldb
 
-go 1.13
+go 1.16
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.6.0
@@ -12,5 +12,4 @@ require (
 	golang.org/x/crypto v0.9.0
 	golang.org/x/sys v0.8.0
 	golang.org/x/text v0.9.0
-	software.sslmate.com/src/go-pkcs12 v0.2.0
 )

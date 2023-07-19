@@ -1,8 +1,8 @@
 package algorithms
 
 import (
-	"bytes"
 	"crypto/rand"
+	"crypto/subtle"
 	"fmt"
 
 	"github.com/microsoft/go-mssqldb/internal/github.com/swisscom/mssql-always-encrypted/pkg/crypto"
@@ -98,12 +98,12 @@ func (a *AeadAes256CbcHmac256Algorithm) Decrypt(ciphertext []byte) ([]byte, erro
 	realCiphertext := ciphertext[idx:]
 	ourAuthTag := a.prepareAuthTag(iv, realCiphertext)
 
-	if bytes.Compare(ourAuthTag, authTag) != 0 {
+	// bytes.Compare is subject to timing attacks
+	if subtle.ConstantTimeCompare(ourAuthTag, authTag) != 1 {
 		return nil, fmt.Errorf("invalid auth tag")
 	}
 
 	// decrypt
-
 	aescdbc := crypto.NewAESCbcPKCS5(a.cek.EncryptionKey(), iv)
 	cleartext := aescdbc.Decrypt(realCiphertext)
 
