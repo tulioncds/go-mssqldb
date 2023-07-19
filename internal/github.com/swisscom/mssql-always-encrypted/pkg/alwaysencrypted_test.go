@@ -69,7 +69,9 @@ func TestDecrypt(t *testing.T) {
 		t.Fatal(err)
 	}
 	cekvBytes, err := ioutil.ReadAll(cekvFile)
-
+	if err != nil {
+		t.Fatal(err)
+	}
 	cekv := LoadCEKV(cekvBytes)
 	rootKey, err := cekv.Decrypt(rsaPrivKey)
 	if err != nil {
