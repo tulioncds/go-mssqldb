@@ -18,7 +18,7 @@ func TestLoadWindowsCertStoreCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer certs.DeleteMasterKeyCert(thumbprint)
-	provider := aecmk.GetGlobalCekProviders()[aecmk.CertificateStoreKeyProvider].Provider.(*LocalCertProvider)
+	provider := aecmk.GetGlobalCekProviders()[aecmk.CertificateStoreKeyProvider].Provider.(*Provider)
 	pk, cert := provider.loadWindowsCertStoreCertificate("CurrentUser/My/" + thumbprint)
 	switch z := pk.(type) {
 	case *rsa.PrivateKey:
@@ -40,7 +40,7 @@ func TestEncryptDecryptEncryptionKeyRoundTrip(t *testing.T) {
 	defer certs.DeleteMasterKeyCert(thumbprint)
 	bytesToEncrypt := []byte{1, 2, 3}
 	keyPath := "CurrentUser/My/" + thumbprint
-	provider := aecmk.GetGlobalCekProviders()[aecmk.CertificateStoreKeyProvider].Provider.(*LocalCertProvider)
+	provider := aecmk.GetGlobalCekProviders()[aecmk.CertificateStoreKeyProvider].Provider.(*Provider)
 	encryptedBytes := provider.EncryptColumnEncryptionKey(keyPath, "RSA_OAEP", bytesToEncrypt)
 	decryptedBytes := provider.DecryptColumnEncryptionKey(keyPath, "RSA_OAEP", encryptedBytes)
 	if len(decryptedBytes) != 3 || decryptedBytes[0] != 1 || decryptedBytes[1] != 2 || decryptedBytes[2] != 3 {

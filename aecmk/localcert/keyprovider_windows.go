@@ -14,13 +14,16 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-var WindowsCertificateStoreKeyProvider = LocalCertProvider{name: aecmk.CertificateStoreKeyProvider, passwords: make(map[string]string)}
+var WindowsCertificateStoreKeyProvider = Provider{name: aecmk.CertificateStoreKeyProvider, passwords: make(map[string]string)}
 
 func init() {
-	aecmk.RegisterCekProvider(aecmk.CertificateStoreKeyProvider, &WindowsCertificateStoreKeyProvider)
+	err := aecmk.RegisterCekProvider(aecmk.CertificateStoreKeyProvider, &WindowsCertificateStoreKeyProvider)
+	if err != nil {
+		panic(err)
+	}
 }
 
-func (p *LocalCertProvider) loadWindowsCertStoreCertificate(path string) (privateKey interface{}, cert *x509.Certificate) {
+func (p *Provider) loadWindowsCertStoreCertificate(path string) (privateKey interface{}, cert *x509.Certificate) {
 	privateKey = nil
 	cert = nil
 	pathParts := strings.Split(path, `/`)

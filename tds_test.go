@@ -122,11 +122,11 @@ func TestSendLoginWithFeatureExt(t *testing.T) {
 		Database:       "database",
 		ClientLCID:     0x204,
 	}
-	login.FeatureExt.Add(&featureExtFedAuth{
+	_ = login.FeatureExt.Add(&featureExtFedAuth{
 		FedAuthLibrary: FedAuthLibrarySecurityToken,
 		FedAuthToken:   "fedauthtoken",
 	})
-	login.FeatureExt.Add(&featureExtColumnEncryption{})
+	_ = login.FeatureExt.Add(&featureExtColumnEncryption{})
 	err := sendLogin(buf, &login)
 	if err != nil {
 		t.Error("sendLogin should succeed")
