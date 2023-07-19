@@ -67,14 +67,6 @@ func (p *Provider) DecryptColumnEncryptionKey(masterKeyPath string, encryptionAl
 	if !allowed {
 		return
 	}
-	switch p.name {
-	case PfxKeyProviderName:
-		pk, cert = p.loadLocalCertificate(masterKeyPath)
-	case aecmk.CertificateStoreKeyProvider:
-		pk, cert = p.loadWindowsCertStoreCertificate(masterKeyPath)
-	default:
-		return
-	}
 	cekv := ae.LoadCEKV(encryptedCek)
 	if !cekv.Verify(cert) {
 		panic(fmt.Errorf("Invalid certificate provided for decryption. Key Store Path: %s. <%s>-<%v>", masterKeyPath, cekv.KeyPath, fmt.Sprintf("%02x", sha1.Sum(cert.Raw))))

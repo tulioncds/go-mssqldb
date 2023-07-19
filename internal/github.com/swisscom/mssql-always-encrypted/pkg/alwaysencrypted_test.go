@@ -39,7 +39,9 @@ func TestLoadCEKV(t *testing.T) {
 		t.Fatal(err)
 	}
 	cekvBytes, err := ioutil.ReadAll(cekvFile)
-
+	if err != nil {
+		t.Fatal(err)
+	}
 	cekv := LoadCEKV(cekvBytes)
 	assert.Equal(t, 1, cekv.Version)
 	assert.True(t, cekv.Verify(cert))

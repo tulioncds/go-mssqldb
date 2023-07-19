@@ -31,9 +31,9 @@ type cekData struct {
 	cmkStoreName    string
 	cmkPath         string
 	algorithm       string
-	byEnclave       bool
-	cmkSignature    string
-	decryptedValue  []byte
+	//byEnclave       bool
+	//cmkSignature    string
+	decryptedValue []byte
 }
 
 type parameterEncData struct {
