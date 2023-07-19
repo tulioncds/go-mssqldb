@@ -7,7 +7,7 @@
 
 ## Install
 
-Requires Go 1.10 or above.
+Requires Go 1.16 or above.
 
 Install with `go install github.com/microsoft/go-mssqldb@latest`.
 
