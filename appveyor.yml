@@ -13,16 +13,20 @@ environment:
   DATABASE: test
   GOVERSION: 116
   COLUMNENCRYPTION:
-  #  Go 1.14+ and SQL2019 are available on the Visual Studio 2019 image only
   APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
   RACE: -race -cpu 4
+  CGO_ENABLED: 1
   TAGS:
   matrix:
     - SQLINSTANCE: SQL2017
-    - SQLINSTANCE: SQL2016
-    - SQLINSTANCE: SQL2014
-    - SQLINSTANCE: SQL2012SP1
-    - SQLINSTANCE: SQL2008R2SP2
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
+      SQLINSTANCE: SQL2016
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
+      SQLINSTANCE: SQL2014
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      SQLINSTANCE: SQL2012SP1
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      SQLINSTANCE: SQL2008R2SP2
     - GOVERSION: 117
       SQLINSTANCE: SQL2017
     - GOVERSION: 118
@@ -53,7 +57,6 @@ install:
   - go get -u github.com/golang-sql/sqlexp
   - go get -u golang.org/x/crypto/md4
   - go get -u golang.org/x/text/encoding/unicode
-  - go get -u software.sslmate.com/src/go-pkcs12
 
 build_script:
   - go build
