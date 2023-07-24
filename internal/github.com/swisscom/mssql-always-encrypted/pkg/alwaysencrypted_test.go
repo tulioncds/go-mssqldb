@@ -94,7 +94,9 @@ func TestDecrypt(t *testing.T) {
 	key := keys.NewAeadAes256CbcHmac256(rootKey)
 	alg := algorithms.NewAeadAes256CbcHmac256Algorithm(key, encryption.Deterministic, 1)
 	cleartext, err := alg.Decrypt(columnBytes)
-
+	if err != nil {
+		t.Fatalf("Decrypt failed! %s", err.Error())
+	}
 	enc := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM)
 	decoder := enc.NewDecoder()
 	cleartextUtf8, err := decoder.Bytes(cleartext)
