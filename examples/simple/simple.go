@@ -27,7 +27,7 @@ func main() {
 		fmt.Printf(" user:%s\n", *user)
 	}
 
-	connString := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d", *server, *user, *password, *port)
+	connString := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;encrypt=true", *server, *user, *password, *port)
 	if *debug {
 		fmt.Printf(" connString:%s\n", connString)
 	}
